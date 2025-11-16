@@ -8,6 +8,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { updateCourseSchedule } from '../utils/courseUtils';
 
 export default function EnrollInCourse({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');

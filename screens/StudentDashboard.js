@@ -7,9 +7,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
+import { updateAllCoursesSchedules } from '../utils/courseUtils';
 
 export default function StudentDashboard({ navigation, route }) {
-  const [courses, setCourses] = useState([
+  // Initial course data without dynamic fields
+  const initialCourses = [
     {
       id: '1',
       name: 'Introduction to Computer Science',
@@ -19,8 +21,6 @@ export default function StudentDashboard({ navigation, route }) {
       attended: 19,
       totalClasses: 20,
       attendanceRate: 95,
-      nextClass: 'Today, 10:15 AM',
-      hasActiveAttendance: true,
     },
     {
       id: '2',
@@ -31,8 +31,6 @@ export default function StudentDashboard({ navigation, route }) {
       attended: 17,
       totalClasses: 20,
       attendanceRate: 85,
-      nextClass: 'Tomorrow, 2:00 PM',
-      hasActiveAttendance: false,
     },
     {
       id: '3',
@@ -43,10 +41,54 @@ export default function StudentDashboard({ navigation, route }) {
       attended: 18,
       totalClasses: 20,
       attendanceRate: 90,
-      nextClass: 'Today, 1:00 PM',
-      hasActiveAttendance: false,
     },
-  ]);
+  ];
+
+  // Initialize with dynamic schedules applied
+  const [courses, setCourses] = useState(updateAllCoursesSchedules(initialCourses));
+
+  // Update course schedules on mount and every minute
+  useEffect(() => {
+    const updateSchedules = () => {
+      setCourses(prevCourses => updateAllCoursesSchedules(prevCourses));
+    };
+    
+    // Update immediately
+    updateSchedules();
+    
+    // Update every minute to keep schedules accurate
+    const interval = setInterval(updateSchedules, 60000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Handle new course enrollment
+  useEffect(() => {
+    if (route.params?.newCourse) {
+      setCourses([...courses, route.params.newCourse]);
+      // Clear the parameter so it doesn't add again
+      navigation.setParams({ newCourse: undefined });
+    }
+  }, [route.params?.newCourse]);
+
+  // Handle check-in completion
+  useEffect(() => {
+    if (route.params?.checkedInCourseId) {
+      const courseId = route.params.checkedInCourseId;
+      setCourses(courses.map(course => 
+        course.id === courseId 
+          ? { 
+              ...course, 
+              attended: course.attended + 1,
+              totalClasses: course.totalClasses + 1,
+              attendanceRate: Math.round(((course.attended + 1) / (course.totalClasses + 1)) * 100),
+            }
+          : course
+      ));
+      // Clear the parameter
+      navigation.setParams({ checkedInCourseId: undefined });
+    }
+  }, [route.params?.checkedInCourseId]);
 
   const getAttendanceColor = (rate) => {
     if (rate >= 90) return '#00C851';
@@ -137,7 +179,10 @@ export default function StudentDashboard({ navigation, route }) {
             {/* Action Buttons */}
             <View style={styles.buttonRow}>
               {course.hasActiveAttendance ? (
-                <TouchableOpacity style={styles.checkInButton}>
+                <TouchableOpacity 
+                  style={styles.checkInButton}
+                  onPress={() => navigation.navigate('CheckIn', { course })}
+                >
                   <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
                   <Text style={styles.checkInButtonText}>Check In Now</Text>
                 </TouchableOpacity>
@@ -147,7 +192,10 @@ export default function StudentDashboard({ navigation, route }) {
                 </View>
               )}
               {course.totalClasses > 0 && (
-                <TouchableOpacity style={styles.iconButton}>
+                <TouchableOpacity 
+                  style={styles.iconButton}
+                  onPress={() => navigation.navigate('StudentStats', { courses })}
+                >
                   <Entypo name="bar-graph" size={18} color="#175EFC" />
                 </TouchableOpacity>
               )}
