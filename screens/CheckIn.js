@@ -8,24 +8,86 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+
+function getDistanceInFeet(lat1, lon1, lat2, lon2) {
+  const toRadians = (deg) => (deg * Math.PI) / 180;
+
+  const R = 6371000; // Earth radius in meters
+  const φ1 = toRadians(lat1);
+  const φ2 = toRadians(lat2);
+  const Δφ = toRadians(lat2 - lat1);
+  const Δλ = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  const distanceMeters = R * c;
+  const distanceFeet = distanceMeters * 3.28084; // convert meters to feet
+
+  return distanceFeet;
+}
 
 export default function CheckIn({ navigation, route }) {
   const { course } = route.params;
   const [isChecking, setIsChecking] = useState(false);
   const [checkInStatus, setCheckInStatus] = useState('idle');
   const [distance, setDistance] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [timestamp, setTimestamp] = useState('');
 
-  useEffect(() => {
-    // Simulate GPS check on mount
-    simulateGPSCheck();
-  }, []);
+  // Start location tracking
+  const startLocationTracking = async () => {
+    // Request permissions
+    const { status } = await Location.requestForegroundPermissionsAsync();
 
-  const simulateGPSCheck = () => {
-    // Simulate GPS distance calculation (random between 10-100 feet)
-    const simulatedDistance = Math.floor(Math.random() * 90) + 10;
-    setDistance(simulatedDistance);
+    if (status !== 'granted') {
+      alert('Permission to access location was denied');
+      return;
+    }
+
+    // Set up the location subscription
+    const locationSubscription = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Highest,
+        timeInterval: 2000, // Update every 2 seconds
+        distanceInterval: 5, // Update if moved by 5 meters
+      },
+      (newLocation) => {
+        setDistance(
+          getDistanceInFeet(
+            course.locationLatitude, 
+            course.locationLongitude, 
+            newLocation.coords.latitude,
+            newLocation.coords.longitude
+          )
+        )
+      },
+      
+    );
+
+    setSubscription(locationSubscription);
   };
+
+  // Stop location tracking
+  const stopLocationTracking = () => {
+    subscription?.remove();
+    setSubscription(null);
+  };
+
+  // Start tracking when component mounts
+  useEffect(() => {
+    startLocationTracking();
+
+    // Clean up subscription on unmount
+    return () => {
+      stopLocationTracking();
+    };
+  }, []);
 
   const handleCheckIn = () => {
     setIsChecking(true);
@@ -136,7 +198,7 @@ export default function CheckIn({ navigation, route }) {
                       },
                     ]}
                   >
-                    ~{distance} feet
+                    ~{Math.round(distance)} feet
                   </Text>
                 </View>
 

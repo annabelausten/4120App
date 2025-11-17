@@ -42,6 +42,18 @@ export default function StudentDashboard({ navigation, route }) {
       totalClasses: 20,
       attendanceRate: 90,
     },
+    {
+      id: '4',
+      name: 'Human Computer Interaction',
+      code: 'CS 412',
+      schedule: 'MW 1:00 - 9:15 PM',
+      location: 'Skirkanich Hall',
+      attended: 18,
+      totalClasses: 20,
+      attendanceRate: 90,
+      locationLatitude: 39.95218955164862,
+      locationLongitude: -75.18985586173162,
+    },
   ];
 
   // Initialize with dynamic schedules applied
