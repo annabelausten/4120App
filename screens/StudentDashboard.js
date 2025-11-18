@@ -8,56 +8,25 @@ import {
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
+import { getCurrentUser, getStudentCourseList } from '../backend/appwrite';
 
 export default function StudentDashboard({ navigation, route }) {
-  // Initial course data without dynamic fields
-  const initialCourses = [
-    {
-      id: '1',
-      name: 'Introduction to Computer Science',
-      code: 'CS 101',
-      schedule: 'MWF 10:15 - 11:05 AM',
-      location: 'Engineering Hall, Room 201',
-      attended: 19,
-      totalClasses: 20,
-      attendanceRate: 95,
-    },
-    {
-      id: '2',
-      name: 'Data Structures',
-      code: 'CS 225',
-      schedule: 'TTh 2:00 - 3:15 PM',
-      location: 'Siebel Center, Room 1404',
-      attended: 17,
-      totalClasses: 20,
-      attendanceRate: 85,
-    },
-    {
-      id: '3',
-      name: 'Web Development',
-      code: 'CS 408',
-      schedule: 'MW 1:00 - 2:15 PM',
-      location: 'Digital Computer Lab, Room 120',
-      attended: 18,
-      totalClasses: 20,
-      attendanceRate: 90,
-    },
-    {
-      id: '4',
-      name: 'Human Computer Interaction',
-      code: 'CS 412',
-      schedule: 'MW 1:00 - 9:15 PM',
-      location: 'Skirkanich Hall',
-      attended: 18,
-      totalClasses: 20,
-      attendanceRate: 90,
-      locationLatitude: 39.95218955164862,
-      locationLongitude: -75.18985586173162,
-    },
-  ];
+  const [courses, setCourses] = useState([]);
 
-  // Initialize with dynamic schedules applied
-  const [courses, setCourses] = useState(updateAllCoursesSchedules(initialCourses));
+  // Fetch student's courses on load
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        const student = await getCurrentUser();
+        const result = await getStudentCourseList(student.$id);
+        console.log("Fetched student courses:", result);
+        setCourses(updateAllCoursesSchedules(result));
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    fetchCourses();
+  }, []);
 
   // Update course schedules on mount and every minute
   useEffect(() => {
@@ -128,7 +97,7 @@ export default function StudentDashboard({ navigation, route }) {
 
         <TouchableOpacity 
           style={styles.enrollButton}
-          onPress={() => navigation.navigate('EnrollInCourse')}
+          onPress={() => navigation.navigate('EnrollInCourse', { courses })}
         >
           <MaterialIcons name="add" size={20} color="#175EFC" />
           <Text style={styles.enrollButtonText}>Enroll in Course</Text>
@@ -138,7 +107,7 @@ export default function StudentDashboard({ navigation, route }) {
       {/* Courses List */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
         {courses.map((course) => (
-          <View key={course.id} style={styles.courseCard}>
+          <View key={course.$id} style={styles.courseCard}>
             {/* Course Header */}
             <View style={styles.courseHeader}>
               <View style={styles.courseInfo}>

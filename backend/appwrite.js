@@ -1,4 +1,4 @@
-import { Client, TablesDB, Account, Query, ID } from 'react-native-appwrite';
+import { Client, TablesDB, Account, Query, ID, Models } from 'react-native-appwrite';
 
 // Appwrite project IDs
 const credentials = {
@@ -27,7 +27,7 @@ const tablesDB = new TablesDB(client);
 const account = new Account(client);
 
 // Test function that adds a row to the users table, should see the created object printed out if no error
-export default async function testFunction() {
+export async function testFunction() {
 
   try {
     const result = await tablesDB.createRow({
@@ -48,3 +48,187 @@ export default async function testFunction() {
 }
 
 /* Feel free to add and export more backend functions here */
+
+
+/**
+ * Gets currently logged in user
+ * @returns {Promise<Models.User>} Currently logged in user
+ */
+export async function getCurrentUser() {
+  try {
+    const user = await account.get();
+    console.log("Logged-in user:", user);
+    return user;
+  } catch (error) {
+    if (error.code === 401 || error.type === 'general_unauthorized_scope') {
+      console.log("No active session or user not logged in.");
+      return null;
+    } else {
+      console.error("Error getting current user:", error);
+      throw error; 
+    }
+  }
+}
+
+/**
+ * Fetches all courses
+ * @returns {Promise<Object[]>} Array of courses
+ */
+export async function getAllCourses() {
+  try {
+    const courses = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courses,
+    })
+
+    return courses.rows
+  } catch (err) {
+    console.error('Error fetching all courses:', err);
+    return [];
+  }
+}
+
+/**
+ * Fetches courses by an array of course IDs.
+ * @param {string[]} courseIds Array of course IDs
+ * @returns {Promise<Object[]>} Array of course objects
+ */
+async function getCoursesByIds(courseIds) {
+  const allCourses = await tablesDB.listRows({
+    databaseId: credentials.databaseId,
+    tableId: tables.courses,
+  });
+  return allCourses.rows.filter(course => courseIds.includes(course.$id));
+}
+
+/**
+ * Enrolls a student into a course by creating a record in the CourseEnrollments table.
+ * @param {string} studentId The student's Appwrite user ID.
+ * @param {string} courseId The course's Appwrite document ID.
+ * @returns {Promise<Object|null>}
+ *   The created enrollment row, or null if the operation fails.
+ */
+export async function enrollStudentInCourse(studentId, courseId) {
+  try {
+    const enrollment = await tablesDB.createRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.courseEnrollments,
+      rowId: ID.unique(),
+      data: {
+        studentId,
+        courseId,
+      },
+    });
+
+    return enrollment;
+  } catch (err) {
+    console.error("Error enrolling student in course:", err);
+    return null;
+  }
+}
+
+/**
+ * Get all course enrollment objects for the student
+ * @param {string} studentId The student's Appwrite user ID.
+ * @returns {Promise<Object[]>}
+ */
+export async function getStudentEnrollments(studentId) {
+  try {
+    const enrollments = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courseEnrollments,
+      queries: [
+        Query.equal("studentId", studentId)
+      ]
+    });
+
+    return enrollments.rows;
+  } catch (err) {
+    console.error("Error fetching student enrollments:", err);
+    return [];
+  }
+}
+
+/**
+ * Fetches all courses a student is enrolled in and calculates real-time attendance stats.
+ * @param {string} studentId The Appwrite user ID of the student
+ * @returns {Promise<Object[]>} Array of course objects with attended, totalClasses, and attendanceRate
+ */
+export async function getStudentCourseList(studentId) {
+  try {
+    // Fetch the student’s enrollments
+    const enrollments = await getStudentEnrollments(studentId);
+    if (!enrollments.length) return [];
+
+    const courseIds = enrollments.map(e => e.courseId);
+
+    // Fetch the course objects
+    const courses = await getCoursesByIds(courseIds);
+
+    // For each course, calculate attendance
+    const coursesWithAttendance = await Promise.all(
+      courses.map(async (course) => {
+        const totalClasses = await getTotalSessions(course.$id);
+        const attended = await getNumAttendances(studentId, course.$id);
+        const attendanceRate = totalClasses > 0 ? Math.round((attended / totalClasses) * 100) : 0;
+
+        return {
+          ...course,
+          attended,
+          totalClasses,
+          attendanceRate,
+        };
+      })
+    );
+
+    return coursesWithAttendance;
+  } catch (err) {
+    console.error("Error fetching courses with attendance:", err);
+    return [];
+  }
+}
+
+
+/**
+ * Counts the total number of attendance sessions for a course.
+ * @param {string} courseId The Appwrite course ID
+ * @returns {Promise<number>} Total number of attendance sessions for the course
+ */
+async function getTotalSessions(courseId) {
+  const sessions = await tablesDB.listRows({
+    databaseId: credentials.databaseId,
+    tableId: tables.attendanceSessions,
+    queries: [Query.equal("courseId", courseId)],
+  });
+  return sessions.rows.length;
+}
+
+/**
+ * Get the number of checkins a student have for a course
+ * @param {string} studentId The student's Appwrite user ID.
+ * @param {string} courseId The course's Appwrite document ID.
+ * @returns {Promise<number>} Number of checkins the student has for a course
+ */
+export async function getNumAttendances(studentId, courseId) {
+  // Get all sessions for the course
+  const sessions = await tablesDB.listRows({
+    databaseId: credentials.databaseId,
+    tableId: tables.attendanceSessions,
+    queries: [Query.equal("courseId", courseId)],
+  });
+  const sessionIds = sessions.rows.map(s => s.$id);
+
+  if (!sessionIds.length) return 0;
+
+  // Get all check-ins for the student for those sessions
+  const checkIns = await tablesDB.listRows({
+    databaseId: credentials.databaseId,
+    tableId: tables.checkIns,
+    queries: [
+      Query.equal("studentId", studentId),
+      Query.equal("sessionId", sessionIds)
+    ],
+  });
+
+  return checkIns.rows.filter(ci => sessionIds.includes(ci.sessionId)).length;
+}
