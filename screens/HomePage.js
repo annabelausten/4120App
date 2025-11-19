@@ -1,17 +1,98 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
+import { createUserAccount, authenticateUser } from "../backend/appwrite";
 
 export default function HomePage({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState("student"); // 'student' or 'professor'
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSignIn = () => {
-    if (selectedRole === "student") {
-      navigation.navigate("StudentDashboard");
-    } else {
-      navigation.navigate("ProfDashboard");
+  const handleCreateAccount = async () => {
+    // Validate input
+    if (!email.trim()) {
+      Alert.alert("Error", "Please enter an email address.");
+      return;
+    }
+    if (!password.trim()) {
+      Alert.alert("Error", "Please enter a password.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const isProfessor = selectedRole === "professor";
+      await createUserAccount(email.trim(), password, isProfessor);
+      
+      Alert.alert(
+        "Success",
+        "Account created successfully! You can now sign in.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Clear password field for security
+              setPassword("");
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error.message || "Failed to create account. Please try again."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignIn = async () => {
+    // Validate input
+    if (!email.trim()) {
+      Alert.alert("Error", "Please enter an email address.");
+      return;
+    }
+    if (!password.trim()) {
+      Alert.alert("Error", "Please enter a password.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const user = await authenticateUser(email.trim(), password);
+      
+      if (!user) {
+        Alert.alert("Error", "Invalid email or password. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Check if user role matches selected role
+      const expectedIsProfessor = selectedRole === "professor";
+      if (user.isProfessor !== expectedIsProfessor) {
+        Alert.alert(
+          "Error",
+          `This account is registered as a ${user.isProfessor ? "Professor" : "Student"}. Please select the correct role.`
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      // Navigate to appropriate dashboard
+      if (selectedRole === "student") {
+        navigation.navigate("StudentDashboard");
+      } else {
+        navigation.navigate("ProfDashboard");
+      }
+    } catch (error) {
+      Alert.alert(
+        "Error",
+        error.message || "Failed to sign in. Please try again."
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -97,13 +178,24 @@ export default function HomePage({ navigation }) {
       />
 
       {/* Sign In Button */}
-      <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-        <Text style={styles.signInButtonText}>Sign In</Text>
+      <TouchableOpacity 
+        style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
+        onPress={handleSignIn}
+        disabled={isLoading}
+      >
+        <Text style={styles.signInButtonText}>
+          {isLoading ? "Loading..." : "Sign In"}
+        </Text>
       </TouchableOpacity>
 
       {/* Create Account Link */}
-      <TouchableOpacity>
-        <Text style={styles.createAccountLink}>Create a new account</Text>
+      <TouchableOpacity 
+        onPress={handleCreateAccount}
+        disabled={isLoading}
+      >
+        <Text style={[styles.createAccountLink, isLoading && styles.createAccountLinkDisabled]}>
+          Create a new account
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -184,5 +276,11 @@ const styles = StyleSheet.create({
     color: "#175EFC",
     textDecorationLine: "underline",
     fontSize: 16,
+  },
+  createAccountLinkDisabled: {
+    color: "#CCCBD0",
+  },
+  signInButtonDisabled: {
+    backgroundColor: "#CCCBD0",
   },
 });

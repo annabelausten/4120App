@@ -51,6 +51,86 @@ export async function testFunction() {
 
 
 /**
+ * Creates a new user account in the Users table
+ * @param {string} email The user's email address
+ * @param {string} password The user's password
+ * @param {boolean} isProfessor Whether the user is a professor
+ * @returns {Promise<Object>} The created user row
+ */
+export async function createUserAccount(email, password, isProfessor) {
+  try {
+    // Check if user with this email already exists
+    const existingUsers = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.users,
+      queries: [
+        Query.equal("email", email)
+      ]
+    });
+
+    if (existingUsers.rows.length > 0) {
+      throw new Error("An account with this email already exists.");
+    }
+
+    // Create new user account
+    const result = await tablesDB.createRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.users,
+      rowId: ID.unique(),
+      data: {
+        email: email,
+        password: password,
+        isProfessor: isProfessor,
+      }
+    });
+
+    console.log("Created user account:", result);
+    return result;
+  } catch (error) {
+    console.error("Error creating user account:", error);
+    throw error;
+  }
+}
+
+/**
+ * Authenticates a user by checking email and password
+ * @param {string} email The user's email address
+ * @param {string} password The user's password
+ * @returns {Promise<Object|null>} User object if authenticated, null otherwise
+ */
+export async function authenticateUser(email, password) {
+  try {
+    // Find user by email
+    const users = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.users,
+      queries: [
+        Query.equal("email", email)
+      ]
+    });
+
+    if (users.rows.length === 0) {
+      console.log("No user found with this email.");
+      return null;
+    }
+
+    const user = users.rows[0];
+
+    // Check if password matches
+    if (user.password === password) {
+      console.log("User authenticated successfully:", user);
+      return user;
+    } else {
+      console.log("Password does not match.");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error authenticating user:", error);
+    throw error;
+  }
+}
+
+/**
  * Gets currently logged in user
  * @returns {Promise<Models.User>} Currently logged in user
  */
