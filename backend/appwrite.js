@@ -73,16 +73,23 @@ export async function createUserAccount(email, password, isProfessor) {
     }
 
     // Create new user account
+    const uniqueID = ID.unique();
+    await account.create({userId: uniqueID, email: email, password: password});
+
+    // Create new user in users table
     const result = await tablesDB.createRow({
       databaseId: credentials.databaseId,
       tableId: tables.users,
-      rowId: ID.unique(),
+      rowId: uniqueID,
       data: {
         email: email,
         password: password,
         isProfessor: isProfessor,
       }
     });
+
+    // Authenticate user
+    await authenticateUser(email, password);
 
     console.log("Created user account:", result);
     return result;
@@ -96,36 +103,25 @@ export async function createUserAccount(email, password, isProfessor) {
  * Authenticates a user by checking email and password
  * @param {string} email The user's email address
  * @param {string} password The user's password
- * @returns {Promise<Object|null>} User object if authenticated, null otherwise
+ * @returns {Promise<null>} User object if authenticated, null otherwise
  */
 export async function authenticateUser(email, password) {
   try {
-    // Find user by email
-    const users = await tablesDB.listRows({
-      databaseId: credentials.databaseId,
-      tableId: tables.users,
-      queries: [
-        Query.equal("email", email)
-      ]
-    });
-
-    if (users.rows.length === 0) {
-      console.log("No user found with this email.");
-      return null;
-    }
-
-    const user = users.rows[0];
-
-    // Check if password matches
-    if (user.password === password) {
-      console.log("User authenticated successfully:", user);
-      return user;
-    } else {
-      console.log("Password does not match.");
-      return null;
-    }
+    await account.createEmailPasswordSession({email, password});
   } catch (error) {
     console.error("Error authenticating user:", error);
+    throw error;
+  }
+}
+
+/**
+ * Logs out current user
+ * @returns {Promise<null>}
+ */
+export async function logOut() {
+  try {
+    await account.deleteSession({ sessionId: 'current' });
+  } catch (error) {
     throw error;
   }
 }
@@ -674,3 +670,63 @@ export async function getSessionCheckIns(sessionId) {
     return [];
   }
 }
+
+/**
+ * Subscribes to realtime attendance session changes for a course
+ * and emits the current session and live isActive state.
+ * @param {string} courseId The ID of the course to watch
+ * @returns {(callback: Function) => () => void} A function that takes a callback and returns an unsubscribe function
+ */
+export const subscribeToCourse = (courseId) => {
+  return (callback) => {
+    try {
+      // Initial fetch of active session
+      getActiveAttendanceSession(courseId).then((session) => {
+        callback({
+          session,
+          isActive: session !== null
+        });
+      });
+
+      // Subscribe to realtime events for attendanceSessions table
+      const unsubscribe = client.subscribe(
+        `databases.${credentials.databaseId}.collections.${tables.attendanceSessions}.documents`,
+        async (event) => {
+          const payload = event.payload;
+
+          // Ignore events for other courses
+          if (payload.courseId !== courseId) return;
+
+          console.log("Event:", event.events)
+
+          // Case 1: New session created
+          if (event.events.includes("databases.*.collections.*.documents.*.create")) {
+            const isActive = payload.isActive === true;
+            callback({
+              session: payload,
+              isActive
+            });
+            return;
+          }
+
+          // Case 2: Session updated (e.g., stopped)
+          if (event.events.includes("databases.*.tables.*.rows.*.update")) {
+            const isActive = payload.isActive === true;
+            callback({
+              session: isActive ? payload : null,
+              isActive
+            });
+            return;
+          }
+        }
+      );
+
+      // Return unsubscribe function
+      return () => unsubscribe();
+
+    } catch (error) {
+      console.error("Error setting up realtime class watcher:", error);
+      throw error;
+    }
+  };
+};

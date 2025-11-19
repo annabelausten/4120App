@@ -107,8 +107,9 @@ export default function ProfDashboard({ navigation, route }) {
     }
   }, [route.params?.refreshCourseId]);
 
-  const handleLogout = () => {
-    navigation.navigate('Home');
+  const handleLogout = async () => {
+    await logOut();
+    navigation.replace('Home');
   };
 
   const handleCreateCourse = () => {

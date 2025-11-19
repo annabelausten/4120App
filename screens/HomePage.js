@@ -1,13 +1,34 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
-import { createUserAccount, authenticateUser } from "../backend/appwrite";
+import { createUserAccount, authenticateUser, getCurrentUser, getUserByEmail } from "../backend/appwrite";
 
 export default function HomePage({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState("student"); // 'student' or 'professor'
   const [isLoading, setIsLoading] = useState(false);
+
+  // If already logged in, jump to student or professor page
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const account = await getCurrentUser();
+        if (account) {
+          const user = await getUserByEmail(account.email);
+          if (user.isProfessor) {
+            navigation.replace("ProfDashboard", { professorId: user.$id });
+          } else {
+            navigation.replace("StudentDashboard");
+          }
+        }
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    fetchUser()
+  }, [])
 
   const handleCreateAccount = async () => {
     // Validate input
@@ -23,21 +44,24 @@ export default function HomePage({ navigation }) {
     setIsLoading(true);
     try {
       const isProfessor = selectedRole === "professor";
-      await createUserAccount(email.trim(), password, isProfessor);
+      const user = await createUserAccount(email.trim(), password, isProfessor);
       
       Alert.alert(
         "Success",
-        "Account created successfully! You can now sign in.",
+        "Account created successfully!",
         [
           {
             text: "OK",
-            onPress: () => {
-              // Clear password field for security
-              setPassword("");
-            }
           }
         ]
       );
+
+      if (isProfessor) {
+        navigation.replace("ProfDashboard", { professorId: user.$id });
+      } else {
+        navigation.replace("StudentDashboard");
+      }
+
     } catch (error) {
       Alert.alert(
         "Error",
@@ -61,7 +85,9 @@ export default function HomePage({ navigation }) {
 
     setIsLoading(true);
     try {
-      const user = await authenticateUser(email.trim(), password);
+      await authenticateUser(email.trim(), password);
+      const account = await getCurrentUser();
+      const user = await getUserByEmail(account.email)
       
       if (!user) {
         Alert.alert("Error", "Invalid email or password. Please try again.");
@@ -82,10 +108,10 @@ export default function HomePage({ navigation }) {
 
       // Navigate to appropriate dashboard
       if (selectedRole === "student") {
-        navigation.navigate("StudentDashboard");
+        navigation.replace("StudentDashboard");
       } else {
         // Pass professor ID to ProfDashboard
-        navigation.navigate("ProfDashboard", { professorId: user.$id });
+        navigation.replace("ProfDashboard", { professorId: user.$id });
       }
     } catch (error) {
       Alert.alert(

@@ -1,5 +1,7 @@
 // courseUtils.js - Helper functions for course scheduling
 
+import { getActiveAttendanceSession } from "../backend/appwrite";
+
 /**
  * Parse schedule string like "MWF 10:15 - 11:05 AM" or "TTh 2:00 - 3:15 PM"
  * Returns array of day codes and time range
@@ -60,43 +62,6 @@ export const parseSchedule = (scheduleString) => {
 };
 
 /**
- * Check if current time is within the class schedule
- */
-export const isClassActiveNow = (scheduleString) => {
-  const now = new Date();
-  const currentDay = now.getDay();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
-  
-  const { days, startTime, endTime } = parseSchedule(scheduleString);
-  
-  if (!startTime || !endTime) return false;
-  
-  // Check if today is a class day
-  if (!days.includes(currentDay)) {
-    return false;
-  }
-  
-  // Check if current time is within class time
-  const currentTimeInMinutes = currentHour * 60 + currentMinute;
-  const startTimeInMinutes = startTime.hour * 60 + startTime.minute;
-  const endTimeInMinutes = endTime.hour * 60 + endTime.minute;
-  
-  const isActive = currentTimeInMinutes >= startTimeInMinutes && currentTimeInMinutes <= endTimeInMinutes;
-  
-  // Debug logging (remove in production)
-  console.log(`Checking ${scheduleString}:`, {
-    currentDay,
-    currentTime: `${currentHour}:${currentMinute}`,
-    classDays: days,
-    isToday: days.includes(currentDay),
-    isActive
-  });
-  
-  return isActive;
-};
-
-/**
  * Get the next class occurrence
  * Returns formatted string like "Today, 2:00 PM" or "Tuesday, 10:15 AM"
  */
@@ -154,7 +119,6 @@ const formatTime = (hour, minute) => {
 export const updateCourseSchedule = (course) => {
   return {
     ...course,
-    hasActiveAttendance: isClassActiveNow(course.schedule),
     nextClass: getNextClassTime(course.schedule)
   };
 };

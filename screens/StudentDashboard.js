@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
-import { getCurrentUser, getStudentCourseList } from '../backend/appwrite';
+import { getCurrentUser, getStudentCourseList, logOut, subscribeToCourse } from '../backend/appwrite';
 
 export default function StudentDashboard({ navigation, route }) {
   const [courses, setCourses] = useState([]);
@@ -28,20 +28,33 @@ export default function StudentDashboard({ navigation, route }) {
     fetchCourses();
   }, []);
 
-  // Update course schedules on mount and every minute
+  // Update course schedules on mount, subscribe to active sessions
   useEffect(() => {
-    const updateSchedules = () => {
-      setCourses(prevCourses => updateAllCoursesSchedules(prevCourses));
+    // 1. Update schedules immediately
+    setCourses(prev => updateAllCoursesSchedules(prev));
+
+    // 2. Create one realtime listener per course
+    const unsubscribes = courses.map(course => {
+      return subscribeToCourse(course.$id)((update) => {
+        setCourses(prevCourses => {
+          return prevCourses.map(c => {
+            if (c.$id !== course.$id) return c;
+
+            return {
+              ...c,
+              activeSession: update.session,
+              hasActiveAttendance: update.isActive,
+            };
+          });
+        });
+      });
+    });
+
+    // 3. Cleanup on unmount
+    return () => {
+      unsubscribes.forEach(unsub => unsub && unsub());
     };
-    
-    // Update immediately
-    updateSchedules();
-    
-    // Update every minute to keep schedules accurate
-    const interval = setInterval(updateSchedules, 60000);
-    
-    return () => clearInterval(interval);
-  }, []);
+  }, [courses.length]);
 
   // Handle new course enrollment
   useEffect(() => {
@@ -77,8 +90,9 @@ export default function StudentDashboard({ navigation, route }) {
     return '#FA2C37';
   };
 
-  const handleLogout = () => {
-    navigation.navigate('Home');
+  const handleLogout = async () => {
+    await logOut();
+    navigation.replace('Home');
   };
 
   return (
