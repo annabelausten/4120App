@@ -136,9 +136,8 @@ export default function ProfCourseInfo({ navigation, route }) {
         await stopAttendanceSession(courseId);
         Alert.alert("Success", "Attendance session stopped.");
       } else {
-        // Start attendance session
+        // Start attendance session (no popup notification)
         await startAttendanceSession(courseId);
-        Alert.alert("Success", "Attendance session started. Students can now check in.");
       }
 
       // Refresh data on the current screen without navigating away
