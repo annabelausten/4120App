@@ -84,7 +84,8 @@ export default function HomePage({ navigation }) {
       if (selectedRole === "student") {
         navigation.navigate("StudentDashboard");
       } else {
-        navigation.navigate("ProfDashboard");
+        // Pass professor ID to ProfDashboard
+        navigation.navigate("ProfDashboard", { professorId: user.$id });
       }
     } catch (error) {
       Alert.alert(

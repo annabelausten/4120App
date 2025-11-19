@@ -6,10 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import { createCourse } from '../backend/appwrite';
 
-export default function CreateCourse({ navigation }) {
+export default function CreateCourse({ navigation, route }) {
+  const professorId = route.params?.professorId;
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -19,6 +22,7 @@ export default function CreateCourse({ navigation }) {
     windowEnd: '',
     days: [],
   });
+  const [isLoading, setIsLoading] = useState(false);
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
@@ -31,22 +35,53 @@ export default function CreateCourse({ navigation }) {
     }));
   };
 
-  const handleSubmit = () => {
-    const newCourse = {
-      name: formData.name,
-      code: formData.code,
-      schedule: formData.schedule,
-      location: formData.location,
-      attendanceWindow: {
-        start: formData.windowStart,
-        end: formData.windowEnd,
-        days: formData.days,
-      },
-      isActive: false,
-    };
-    
-    // Navigate back with new course data
-    navigation.navigate('ProfDashboard', { newCourse });
+  const handleSubmit = async () => {
+    // Validate required fields
+    if (!formData.name.trim()) {
+      Alert.alert("Error", "Please enter a course name.");
+      return;
+    }
+    if (!formData.code.trim()) {
+      Alert.alert("Error", "Please enter a course code.");
+      return;
+    }
+    if (!formData.schedule.trim()) {
+      Alert.alert("Error", "Please enter a schedule.");
+      return;
+    }
+    if (!formData.location.trim()) {
+      Alert.alert("Error", "Please enter a location.");
+      return;
+    }
+    if (!professorId) {
+      Alert.alert("Error", "Professor ID is missing. Please try logging in again.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Create course in database
+      await createCourse(
+        professorId,
+        formData.name.trim(),
+        formData.code.trim(),
+        formData.schedule.trim(),
+        formData.location.trim(),
+        null, // locationLatitude - can be added later if needed
+        null  // locationLongitude - can be added later if needed
+      );
+
+      // Navigate back to dashboard (courses will refresh automatically)
+      navigation.goBack();
+    } catch (error) {
+      console.error("Error creating course:", error);
+      Alert.alert(
+        "Error",
+        error.message || "Failed to create course. Please try again."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -179,8 +214,14 @@ export default function CreateCourse({ navigation }) {
         </View>
 
         {/* Submit Button */}
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Create Course</Text>
+        <TouchableOpacity 
+          style={[styles.submitButton, isLoading && styles.submitButtonDisabled]} 
+          onPress={handleSubmit}
+          disabled={isLoading}
+        >
+          <Text style={styles.submitButtonText}>
+            {isLoading ? "Creating..." : "Create Course"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -313,5 +354,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#CCCBD0',
   },
 });

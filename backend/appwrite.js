@@ -312,3 +312,132 @@ export async function getNumAttendances(studentId, courseId) {
 
   return checkIns.rows.filter(ci => sessionIds.includes(ci.sessionId)).length;
 }
+
+/**
+ * Gets a user from the Users table by email
+ * @param {string} email The user's email address
+ * @returns {Promise<Object|null>} User object if found, null otherwise
+ */
+export async function getUserByEmail(email) {
+  try {
+    const users = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.users,
+      queries: [
+        Query.equal("email", email)
+      ]
+    });
+
+    if (users.rows.length === 0) {
+      return null;
+    }
+
+    return users.rows[0];
+  } catch (error) {
+    console.error("Error getting user by email:", error);
+    throw error;
+  }
+}
+
+/**
+ * Counts the number of enrolled students for a course
+ * @param {string} courseId The course's Appwrite document ID
+ * @returns {Promise<number>} Number of enrolled students
+ */
+export async function getEnrolledStudentsCount(courseId) {
+  try {
+    const enrollments = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courseEnrollments,
+      queries: [
+        Query.equal("courseId", courseId)
+      ]
+    });
+
+    return enrollments.rows.length;
+  } catch (error) {
+    console.error("Error counting enrolled students:", error);
+    return 0;
+  }
+}
+
+/**
+ * Fetches all courses for a professor
+ * @param {string} professorId The professor's user ID from the Users table
+ * @returns {Promise<Object[]>} Array of courses with enrolledStudents count
+ */
+export async function getProfessorCourses(professorId) {
+  try {
+    // Fetch courses by professorId
+    const coursesResult = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courses,
+      queries: [
+        Query.equal("professorId", professorId)
+      ]
+    });
+
+    const courses = coursesResult.rows;
+
+    // For each course, get the enrolled students count
+    const coursesWithEnrollment = await Promise.all(
+      courses.map(async (course) => {
+        const enrolledStudents = await getEnrolledStudentsCount(course.$id);
+        return {
+          ...course,
+          enrolledStudents,
+          id: course.$id, // Add id for compatibility with existing code
+        };
+      })
+    );
+
+    return coursesWithEnrollment;
+  } catch (error) {
+    console.error("Error fetching professor courses:", error);
+    return [];
+  }
+}
+
+/**
+ * Creates a new course in the database
+ * @param {string} professorId The professor's user ID from the Users table
+ * @param {string} name Course name
+ * @param {string} code Course code
+ * @param {string} schedule Course schedule
+ * @param {string} location Course location
+ * @param {number} locationLatitude Latitude of course location (optional)
+ * @param {number} locationLongitude Longitude of course location (optional)
+ * @returns {Promise<Object>} The created course object
+ */
+export async function createCourse(professorId, name, code, schedule, location, locationLatitude = null, locationLongitude = null) {
+  try {
+    const courseData = {
+      professorId,
+      name,
+      code,
+      schedule,
+      location,
+    };
+
+    // Only add location coordinates if provided
+    if (locationLatitude !== null && locationLatitude !== undefined) {
+      courseData.locationLatitude = locationLatitude;
+    }
+    if (locationLongitude !== null && locationLongitude !== undefined) {
+      courseData.locationLongitude = locationLongitude;
+    }
+
+    const result = await tablesDB.createRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.courses,
+      rowId: ID.unique(),
+      data: courseData,
+    });
+
+    console.log("Created course:", result);
+    return result;
+  } catch (error) {
+    console.error("Error creating course:", error);
+    throw error;
+  }
+}
