@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
 import { createCourse } from '../backend/appwrite';
+import { searchPlaces, getPlaceDetails } from '../utils/googlePlaces';
 
 export default function CreateCourse({ navigation, route }) {
   const professorId = route.params?.professorId;
@@ -18,22 +19,80 @@ export default function CreateCourse({ navigation, route }) {
     code: '',
     schedule: '',
     location: '',
-    windowStart: '',
-    windowEnd: '',
-    days: [],
+    locationLatitude: null,
+    locationLongitude: null,
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const locationInputRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  // Handle location input change with autocomplete
+  const handleLocationChange = async (text) => {
+    setFormData((prev) => ({ ...prev, location: text }));
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
-  const handleDayToggle = (day) => {
-    setFormData((prev) => ({
-      ...prev,
-      days: prev.days.includes(day)
-        ? prev.days.filter((d) => d !== day)
-        : [...prev.days, day],
-    }));
+    // If text is empty, hide suggestions
+    if (!text.trim()) {
+      setShowSuggestions(false);
+      setLocationSuggestions([]);
+      return;
+    }
+
+    // Debounce search - wait 500ms after user stops typing
+    searchTimeoutRef.current = setTimeout(async () => {
+      setIsSearchingPlaces(true);
+      const suggestions = await searchPlaces(text);
+      setLocationSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
+      setIsSearchingPlaces(false);
+    }, 500);
   };
+
+  // Handle location selection from suggestions
+  const handleLocationSelect = async (suggestion) => {
+    setFormData((prev) => ({ ...prev, location: suggestion.description }));
+    setShowSuggestions(false);
+    setLocationSuggestions([]);
+
+    // Get place details to retrieve coordinates
+    setIsSearchingPlaces(true);
+    const placeDetails = await getPlaceDetails(suggestion.placeId);
+    
+    if (placeDetails) {
+      setFormData((prev) => ({
+        ...prev,
+        location: placeDetails.formattedAddress || suggestion.description,
+        locationLatitude: placeDetails.latitude,
+        locationLongitude: placeDetails.longitude,
+      }));
+      Alert.alert(
+        "Location Confirmed",
+        `Coordinates saved for: ${placeDetails.formattedAddress || suggestion.description}`
+      );
+    } else {
+      Alert.alert(
+        "Warning",
+        "Could not retrieve coordinates for this location. The course will be created without GPS coordinates."
+      );
+    }
+    setIsSearchingPlaces(false);
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSubmit = async () => {
     // Validate required fields
@@ -60,15 +119,15 @@ export default function CreateCourse({ navigation, route }) {
 
     setIsLoading(true);
     try {
-      // Create course in database
+      // Create course in database with coordinates if available
       await createCourse(
         professorId,
         formData.name.trim(),
         formData.code.trim(),
         formData.schedule.trim(),
         formData.location.trim(),
-        null, // locationLatitude - can be added later if needed
-        null  // locationLongitude - can be added later if needed
+        formData.locationLatitude,
+        formData.locationLongitude
       );
 
       // Navigate back to dashboard (courses will refresh automatically)
@@ -141,75 +200,67 @@ export default function CreateCourse({ navigation, route }) {
               <Entypo name="location-pin" size={16} color="#333" />
               <Text style={[styles.label, { marginLeft: 4 }]}>Classroom Location</Text>
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Engineering Hall, Room 201"
-              placeholderTextColor="#CCCBD0"
-              value={formData.location}
-              onChangeText={(text) => setFormData({ ...formData, location: text })}
-            />
-            <Text style={styles.helperText}>
-              GPS will verify within 50 feet of this location
-            </Text>
-          </View>
-        </View>
-
-        {/* Attendance Window Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialIcons name="schedule" size={20} color="#175EFC" />
-            <Text style={styles.cardHeaderText}>Attendance Window</Text>
-          </View>
-
-          <View style={styles.timeRow}>
-            <View style={styles.timeInput}>
-              <Text style={styles.label}>Start Time</Text>
+            <View style={styles.locationInputContainer}>
               <TextInput
+                ref={locationInputRef}
                 style={styles.input}
-                placeholder="10:15"
+                placeholder="Search for a location..."
                 placeholderTextColor="#CCCBD0"
-                value={formData.windowStart}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, windowStart: text })
-                }
+                value={formData.location}
+                onChangeText={handleLocationChange}
+                onFocus={() => {
+                  if (locationSuggestions.length > 0) {
+                    setShowSuggestions(true);
+                  }
+                }}
+                onBlur={() => {
+                  // Delay hiding suggestions to allow selection
+                  setTimeout(() => setShowSuggestions(false), 200);
+                }}
               />
-            </View>
-
-            <View style={styles.timeInput}>
-              <Text style={styles.label}>End Time</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="10:30"
-                placeholderTextColor="#CCCBD0"
-                value={formData.windowEnd}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, windowEnd: text })
-                }
-              />
-            </View>
-          </View>
-
-          <View style={styles.daysSection}>
-            <Text style={styles.label}>Days of Week</Text>
-            {daysOfWeek.map((day) => (
-              <TouchableOpacity
-                key={day}
-                style={styles.checkboxRow}
-                onPress={() => handleDayToggle(day)}
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    formData.days.includes(day) && styles.checkboxChecked,
-                  ]}
-                >
-                  {formData.days.includes(day) && (
-                    <MaterialIcons name="check" size={16} color="#FFFFFF" />
-                  )}
+              {isSearchingPlaces && (
+                <View style={styles.searchIndicator}>
+                  <MaterialIcons name="search" size={20} color="#777777" />
                 </View>
-                <Text style={styles.checkboxLabel}>{day}</Text>
-              </TouchableOpacity>
-            ))}
+              )}
+              {formData.locationLatitude && formData.locationLongitude && (
+                <View style={styles.coordinatesIndicator}>
+                  <MaterialIcons name="check-circle" size={20} color="#00C851" />
+                </View>
+              )}
+            </View>
+            {formData.locationLatitude && formData.locationLongitude ? (
+              <Text style={[styles.helperText, { color: '#00C851' }]}>
+                ✓ GPS coordinates saved. Students can check in at this location.
+              </Text>
+            ) : (
+              <Text style={styles.helperText}>
+                Search and select a location to enable GPS verification (within 50 feet)
+              </Text>
+            )}
+            
+            {/* Location Suggestions */}
+            {showSuggestions && locationSuggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {locationSuggestions.map((item) => (
+                  <TouchableOpacity
+                    key={item.placeId}
+                    style={styles.suggestionItem}
+                    onPress={() => handleLocationSelect(item)}
+                  >
+                    <MaterialIcons name="place" size={20} color="#175EFC" />
+                    <View style={styles.suggestionTextContainer}>
+                      <Text style={styles.suggestionMainText}>{item.mainText}</Text>
+                      {item.secondaryText && (
+                        <Text style={styles.suggestionSecondaryText}>
+                          {item.secondaryText}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         </View>
 
@@ -269,17 +320,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardHeaderText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
-  },
   inputGroup: {
     marginBottom: 16,
   },
@@ -309,40 +349,6 @@ const styles = StyleSheet.create({
     color: '#777777',
     marginTop: 4,
   },
-  timeRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  timeInput: {
-    flex: 1,
-  },
-  daysSection: {
-    marginTop: 8,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#CCCBD0',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  checkboxChecked: {
-    backgroundColor: '#175EFC',
-    borderColor: '#175EFC',
-  },
-  checkboxLabel: {
-    fontSize: 14,
-    color: '#333',
-  },
   submitButton: {
     backgroundColor: '#175EFC',
     paddingVertical: 16,
@@ -357,5 +363,54 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: {
     backgroundColor: '#CCCBD0',
+  },
+  locationInputContainer: {
+    position: 'relative',
+  },
+  searchIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: 10,
+  },
+  coordinatesIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: 10,
+  },
+  suggestionsContainer: {
+    marginTop: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CCCBD0',
+    maxHeight: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  suggestionTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  suggestionMainText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  suggestionSecondaryText: {
+    fontSize: 12,
+    color: '#777777',
+    marginTop: 2,
   },
 });

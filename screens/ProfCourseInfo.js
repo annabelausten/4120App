@@ -20,6 +20,7 @@ export default function ProfCourseInfo({ navigation, route }) {
   const [activeSession, setActiveSession] = useState(null);
   const [checkIns, setCheckIns] = useState([]);
   const [isToggling, setIsToggling] = useState(false);
+  const [toggleAction, setToggleAction] = useState(null); // 'start' or 'stop'
 
   // Function to refresh all data on the current screen
   const refreshScreenData = async () => {
@@ -129,7 +130,11 @@ export default function ProfCourseInfo({ navigation, route }) {
   const handleToggleAttendance = async () => {
     if (isToggling) return; // Prevent double clicks
 
+    // Determine the action before starting the toggle
+    const action = isAttendanceActive ? 'stop' : 'start';
+    setToggleAction(action);
     setIsToggling(true);
+    
     try {
       if (isAttendanceActive) {
         // Stop attendance session
@@ -147,6 +152,7 @@ export default function ProfCourseInfo({ navigation, route }) {
       Alert.alert("Error", error.message || "Failed to toggle attendance. Please try again.");
     } finally {
       setIsToggling(false);
+      setToggleAction(null);
     }
   };
 
@@ -194,9 +200,9 @@ export default function ProfCourseInfo({ navigation, route }) {
         >
           {isToggling ? (
             <>
-              <MaterialIcons name="hourglass-empty" size={20} color={isAttendanceActive ? "#FFFFFF" : "#175EFC"} />
-              <Text style={[styles.toggleButtonText, { color: isAttendanceActive ? "#FFFFFF" : "#175EFC" }]}>
-                {isAttendanceActive ? "Stopping..." : "Starting..."}
+              <MaterialIcons name="hourglass-empty" size={20} color={toggleAction === 'stop' ? "#FFFFFF" : "#175EFC"} />
+              <Text style={[styles.toggleButtonText, { color: toggleAction === 'stop' ? "#FFFFFF" : "#175EFC" }]}>
+                {toggleAction === 'stop' ? "Stopping..." : "Starting..."}
               </Text>
             </>
           ) : isAttendanceActive ? (
