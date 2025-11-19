@@ -7,7 +7,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import { getProfessorCourses, getActiveAttendanceSession } from '../backend/appwrite';
+import { getProfessorCourses, getActiveAttendanceSession, logOut } from '../backend/appwrite';
 
 export default function ProfDashboard({ navigation, route }) {
   const [courses, setCourses] = useState([]);

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
-import { createUserAccount, authenticateUser, getCurrentUser, getUserByEmail } from "../backend/appwrite";
+import { createUserAccount, authenticateUser, getCurrentUser, getUserByEmail, logOut } from "../backend/appwrite";
 
 export default function HomePage({ navigation }) {
   const [email, setEmail] = useState("");
@@ -102,6 +102,7 @@ export default function HomePage({ navigation }) {
           "Error",
           `This account is registered as a ${user.isProfessor ? "Professor" : "Student"}. Please select the correct role.`
         );
+        await logOut();
         setIsLoading(false);
         return;
       }

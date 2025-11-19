@@ -147,17 +147,56 @@ export async function getCurrentUser() {
 }
 
 /**
- * Fetches all courses
- * @returns {Promise<Object[]>} Array of courses
+ * Fetches all courses and augments them with the number of enrolled students and professor's email
+ * @returns {Promise<Object[]>} Array of courses with fields: enrolledStudents and professor
  */
 export async function getAllCourses() {
   try {
-    const courses = await tablesDB.listRows({
+    // Fetch all courses
+    const coursesResponse = await tablesDB.listRows({
       databaseId: credentials.databaseId,
       tableId: tables.courses,
-    })
+    });
 
-    return courses.rows
+    const courses = coursesResponse.rows;
+
+    // Augment each course
+    const augmentedCourses = await Promise.all(courses.map(async (course) => {
+      // Count enrolled students
+      const enrollments = await tablesDB.listRows({
+        databaseId: credentials.databaseId,
+        tableId: tables.courseEnrollments,
+        queries: [
+          Query.equal("courseId", course.$id)
+        ]
+      });
+
+      const enrolledStudents = enrollments.total || enrollments.rows.length;
+
+      // Get professor's email
+      let professor = null;
+      if (course.professorId) {
+        try {
+          const profRow = await tablesDB.getRow({
+            databaseId: credentials.databaseId,
+            tableId: tables.users,
+            rowId: course.professorId
+          });
+          professor = profRow.email;
+        } catch {
+          professor = null; // professor might not exist
+        }
+      }
+
+      return {
+        ...course,
+        enrolledStudents,
+        professor
+      };
+    }));
+
+    return augmentedCourses;
+
   } catch (err) {
     console.error('Error fetching all courses:', err);
     return [];
@@ -697,8 +736,6 @@ export const subscribeToCourse = (courseId) => {
           // Ignore events for other courses
           if (payload.courseId !== courseId) return;
 
-          console.log("Event:", event.events)
-
           // Case 1: New session created
           if (event.events.includes("databases.*.collections.*.documents.*.create")) {
             const isActive = payload.isActive === true;
@@ -730,3 +767,47 @@ export const subscribeToCourse = (courseId) => {
     }
   };
 };
+
+/**
+ * Creates a new check-in for a student for a given course's active session
+ * @param {string} activeSession The course's active attendance session
+ * @param {string} studentId The student's Appwrite user ID
+ * @returns {Promise<Object>} The created check-in document
+ */
+export async function createCheckIn(activeSession, studentId) {
+  try {
+    
+    // Check if the student has already checked in
+    const existingCheckIn = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.checkIns,
+      queries: [
+        Query.equal('sessionId', activeSession.$id),
+        Query.equal('studentId', studentId),
+      ],
+    });
+
+    if (existingCheckIn.rows.length > 0) {
+      throw new Error('Student already checked in for this session');
+    }
+
+    // Create a new check-in
+    const now = new Date().toISOString();
+    const checkIn = await tablesDB.createRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.checkIns,
+      rowId: ID.unique(),
+      data: {
+        sessionId: activeSession.$id,
+        studentId,
+        timestamp: now,
+      },
+    });
+
+    console.log('Check-in created:', checkIn);
+    return checkIn;
+  } catch (error) {
+    console.error('Error creating check-in:', error);
+    throw error;
+  }
+}
