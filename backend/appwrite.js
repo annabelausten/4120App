@@ -441,3 +441,236 @@ export async function createCourse(professorId, name, code, schedule, location, 
     throw error;
   }
 }
+
+/**
+ * Gets a user by their ID from the Users table
+ * @param {string} userId The user's ID
+ * @returns {Promise<Object|null>} User object if found, null otherwise
+ */
+async function getUserById(userId) {
+  try {
+    const result = await tablesDB.getRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.users,
+      rowId: userId,
+    });
+    return result;
+  } catch (error) {
+    console.error("Error getting user by ID:", error);
+    return null;
+  }
+}
+
+/**
+ * Gets all students enrolled in a course with their attendance statistics
+ * @param {string} courseId The course's Appwrite document ID
+ * @returns {Promise<Object[]>} Array of student objects with attendance stats
+ */
+export async function getCourseStudents(courseId) {
+  try {
+    // Get all enrollments for this course
+    const enrollments = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courseEnrollments,
+      queries: [
+        Query.equal("courseId", courseId)
+      ]
+    });
+
+    if (!enrollments.rows.length) {
+      return [];
+    }
+
+    // Get total number of attendance sessions for this course
+    const totalClasses = await getTotalSessions(courseId);
+
+    // For each enrollment, get student info and calculate attendance
+    const studentsWithStats = await Promise.all(
+      enrollments.rows.map(async (enrollment) => {
+        const student = await getUserById(enrollment.studentId);
+        if (!student) {
+          return null; // Skip if student not found
+        }
+
+        // Get attendance count for this student in this course
+        const attended = await getNumAttendances(enrollment.studentId, courseId);
+        
+        // Calculate attendance rate
+        const attendanceRate = totalClasses > 0 
+          ? Math.round((attended / totalClasses) * 100) 
+          : 0;
+
+        return {
+          id: student.$id,
+          name: student.name || student.email || 'Unknown Student', // Use name, fallback to email
+          email: student.email,
+          attended,
+          totalClasses,
+          attendanceRate,
+          checkedIn: false, // Will be updated by real-time check-in data
+          timestamp: null,
+        };
+      })
+    );
+
+    // Filter out null values (students not found)
+    return studentsWithStats.filter(student => student !== null);
+  } catch (error) {
+    console.error("Error fetching course students:", error);
+    return [];
+  }
+}
+
+/**
+ * Starts a new attendance session for a course
+ * @param {string} courseId The course's Appwrite document ID
+ * @returns {Promise<Object>} The created attendance session
+ */
+export async function startAttendanceSession(courseId) {
+  try {
+    // First, check if there's already an active session for this course
+    const activeSession = await getActiveAttendanceSession(courseId);
+    if (activeSession) {
+      throw new Error("An attendance session is already active for this course. Please stop it first.");
+    }
+
+    // Get current timestamp in ISO 8601 format
+    const startTime = new Date().toISOString();
+
+    // Create new attendance session
+    const result = await tablesDB.createRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.attendanceSessions,
+      rowId: ID.unique(),
+      data: {
+        courseId: courseId,
+        isActive: true,
+        startTime: startTime,
+        // endTime will be null initially, set when session is stopped
+      }
+    });
+
+    console.log("Started attendance session:", result);
+    return result;
+  } catch (error) {
+    console.error("Error starting attendance session:", error);
+    throw error;
+  }
+}
+
+/**
+ * Stops the active attendance session for a course
+ * @param {string} courseId The course's Appwrite document ID
+ * @returns {Promise<Object|null>} The updated session or null if no active session
+ */
+export async function stopAttendanceSession(courseId) {
+  try {
+    // Find the active session for this course
+    const activeSession = await getActiveAttendanceSession(courseId);
+    if (!activeSession) {
+      // No active session to stop
+      return null;
+    }
+
+    // Get current timestamp in ISO 8601 format
+    const endTime = new Date().toISOString();
+
+    // Update the session to set isActive to false and endTime
+    const result = await tablesDB.updateRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.attendanceSessions,
+      rowId: activeSession.$id,
+      data: {
+        isActive: false,
+        endTime: endTime,
+      }
+    });
+
+    console.log("Stopped attendance session:", result);
+    return result;
+  } catch (error) {
+    console.error("Error stopping attendance session:", error);
+    throw error;
+  }
+}
+
+/**
+ * Gets the active attendance session for a course (if any)
+ * @param {string} courseId The course's Appwrite document ID
+ * @returns {Promise<Object|null>} Active attendance session or null
+ */
+export async function getActiveAttendanceSession(courseId) {
+  try {
+    // Get all sessions for this course
+    const sessions = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.attendanceSessions,
+      queries: [
+        Query.equal("courseId", courseId),
+        Query.equal("isActive", true)
+      ]
+    });
+
+    if (sessions.rows.length > 0) {
+      return sessions.rows[0]; // Return the first active session
+    }
+    return null;
+  } catch (error) {
+    // If isActive field query fails, try without it and filter manually
+    console.warn("Query with isActive failed, trying alternative:", error);
+    try {
+      const allSessions = await tablesDB.listRows({
+        databaseId: credentials.databaseId,
+        tableId: tables.attendanceSessions,
+        queries: [
+          Query.equal("courseId", courseId)
+        ]
+      });
+      
+      // Filter for active sessions manually
+      const activeSessions = allSessions.rows.filter(s => s.isActive === true);
+      if (activeSessions.length > 0) {
+        // Return most recent active session
+        return activeSessions[activeSessions.length - 1];
+      }
+    } catch (err) {
+      console.error("Error fetching active attendance session:", err);
+    }
+    return null;
+  }
+}
+
+/**
+ * Gets check-in data for a specific attendance session
+ * @param {string} sessionId The attendance session ID
+ * @returns {Promise<Object[]>} Array of check-in objects with student info
+ */
+export async function getSessionCheckIns(sessionId) {
+  try {
+    const checkIns = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.checkIns,
+      queries: [
+        Query.equal("sessionId", sessionId)
+      ]
+    });
+
+    // Get student info for each check-in
+    const checkInsWithStudentInfo = await Promise.all(
+      checkIns.rows.map(async (checkIn) => {
+        const student = await getUserById(checkIn.studentId);
+        return {
+          studentId: checkIn.studentId,
+          studentName: student?.name || student?.email || 'Unknown Student',
+          timestamp: checkIn.createdAt || checkIn.timestamp,
+          checkInId: checkIn.$id,
+        };
+      })
+    );
+
+    return checkInsWithStudentInfo;
+  } catch (error) {
+    console.error("Error fetching session check-ins:", error);
+    return [];
+  }
+}

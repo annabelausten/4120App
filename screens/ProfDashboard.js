@@ -7,7 +7,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import { getProfessorCourses } from '../backend/appwrite';
+import { getProfessorCourses, getActiveAttendanceSession } from '../backend/appwrite';
 
 export default function ProfDashboard({ navigation, route }) {
   const [courses, setCourses] = useState([]);
@@ -25,12 +25,19 @@ export default function ProfDashboard({ navigation, route }) {
       try {
         setIsLoading(true);
         const fetchedCourses = await getProfessorCourses(professorId);
-        // Add default isActive property if not present
-        const coursesWithDefaults = fetchedCourses.map(course => ({
-          ...course,
-          isActive: course.isActive || false,
-        }));
-        setCourses(coursesWithDefaults);
+        
+        // Check which courses have active attendance sessions
+        const coursesWithActiveStatus = await Promise.all(
+          fetchedCourses.map(async (course) => {
+            const activeSession = await getActiveAttendanceSession(course.$id);
+            return {
+              ...course,
+              isActive: activeSession !== null, // Set isActive based on database state
+            };
+          })
+        );
+        
+        setCourses(coursesWithActiveStatus);
       } catch (error) {
         console.error("Error fetching professor courses:", error);
       } finally {
@@ -49,11 +56,19 @@ export default function ProfDashboard({ navigation, route }) {
         const refreshCourses = async () => {
           try {
             const fetchedCourses = await getProfessorCourses(professorId);
-            const coursesWithDefaults = fetchedCourses.map(course => ({
-              ...course,
-              isActive: course.isActive || false,
-            }));
-            setCourses(coursesWithDefaults);
+            
+            // Check which courses have active attendance sessions
+            const coursesWithActiveStatus = await Promise.all(
+              fetchedCourses.map(async (course) => {
+                const activeSession = await getActiveAttendanceSession(course.$id);
+                return {
+                  ...course,
+                  isActive: activeSession !== null, // Set isActive based on database state
+                };
+              })
+            );
+            
+            setCourses(coursesWithActiveStatus);
           } catch (error) {
             console.error("Error refreshing professor courses:", error);
           }
@@ -65,21 +80,32 @@ export default function ProfDashboard({ navigation, route }) {
     return unsubscribe;
   }, [navigation, professorId]);
 
-  // Handle attendance toggle from ProfCourseInfo
+  // Handle course refresh from ProfCourseInfo (after start/stop attendance)
   useEffect(() => {
-    if (route.params?.toggleCourseId) {
-      const courseId = route.params.toggleCourseId;
-      setCourses(prevCourses =>
-        prevCourses.map(course =>
-          course.id === courseId || course.$id === courseId
-            ? { ...course, isActive: !course.isActive }
-            : course
-        )
-      );
+    if (route.params?.refreshCourseId) {
+      const courseId = route.params.refreshCourseId;
+      
+      // Refresh the specific course's active status from database
+      const refreshCourse = async () => {
+        try {
+          const activeSession = await getActiveAttendanceSession(courseId);
+          setCourses(prevCourses =>
+            prevCourses.map(course =>
+              course.id === courseId || course.$id === courseId
+                ? { ...course, isActive: activeSession !== null }
+                : course
+            )
+          );
+        } catch (error) {
+          console.error("Error refreshing course:", error);
+        }
+      };
+      
+      refreshCourse();
       // Clear the parameter
-      navigation.setParams({ toggleCourseId: undefined });
+      navigation.setParams({ refreshCourseId: undefined });
     }
-  }, [route.params?.toggleCourseId]);
+  }, [route.params?.refreshCourseId]);
 
   const handleLogout = () => {
     navigation.navigate('Home');
