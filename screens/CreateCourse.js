@@ -9,18 +9,21 @@ import {
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
-import { createCourse } from '../backend/appwrite';
+import { createCourse, updateCourse } from '../backend/appwrite';
 import { searchPlaces, getPlaceDetails } from '../utils/googlePlaces';
 
 export default function CreateCourse({ navigation, route }) {
   const professorId = route.params?.professorId;
+  const existingCourse = route.params?.course;
+  const isEditMode = route.params?.isEditMode || false;
+  
   const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    schedule: '',
-    location: '',
-    locationLatitude: null,
-    locationLongitude: null,
+    name: existingCourse?.name || '',
+    code: existingCourse?.code || '',
+    schedule: existingCourse?.schedule || '',
+    location: existingCourse?.location || '',
+    locationLatitude: existingCourse?.locationLatitude || null,
+    locationLongitude: existingCourse?.locationLongitude || null,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
@@ -112,31 +115,45 @@ export default function CreateCourse({ navigation, route }) {
       Alert.alert("Error", "Please enter a location.");
       return;
     }
-    if (!professorId) {
+    if (!professorId && !isEditMode) {
       Alert.alert("Error", "Professor ID is missing. Please try logging in again.");
       return;
     }
 
     setIsLoading(true);
     try {
-      // Create course in database with coordinates if available
-      await createCourse(
-        professorId,
-        formData.name.trim(),
-        formData.code.trim(),
-        formData.schedule.trim(),
-        formData.location.trim(),
-        formData.locationLatitude,
-        formData.locationLongitude
-      );
+      if (isEditMode && existingCourse) {
+        // Update existing course
+        await updateCourse(
+          existingCourse.$id || existingCourse.id,
+          formData.name.trim(),
+          formData.code.trim(),
+          formData.schedule.trim(),
+          formData.location.trim(),
+          formData.locationLatitude,
+          formData.locationLongitude
+        );
+        Alert.alert("Success", "Course updated successfully.");
+      } else {
+        // Create new course
+        await createCourse(
+          professorId,
+          formData.name.trim(),
+          formData.code.trim(),
+          formData.schedule.trim(),
+          formData.location.trim(),
+          formData.locationLatitude,
+          formData.locationLongitude
+        );
+      }
 
       // Navigate back to dashboard (courses will refresh automatically)
       navigation.goBack();
     } catch (error) {
-      console.error("Error creating course:", error);
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} course:`, error);
       Alert.alert(
         "Error",
-        error.message || "Failed to create course. Please try again."
+        error.message || `Failed to ${isEditMode ? 'update' : 'create'} course. Please try again.`
       );
     } finally {
       setIsLoading(false);
@@ -154,7 +171,7 @@ export default function CreateCourse({ navigation, route }) {
           >
             <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create New Course</Text>
+          <Text style={styles.headerTitle}>{isEditMode ? 'Edit Course' : 'Create New Course'}</Text>
         </View>
       </View>
 
@@ -278,7 +295,9 @@ export default function CreateCourse({ navigation, route }) {
           disabled={isLoading}
         >
           <Text style={styles.submitButtonText}>
-            {isLoading ? "Creating..." : "Create Course"}
+            {isLoading 
+              ? (isEditMode ? "Updating..." : "Creating...") 
+              : (isEditMode ? "Update Course" : "Create Course")}
           </Text>
         </TouchableOpacity>
       </KeyboardAwareScrollView>

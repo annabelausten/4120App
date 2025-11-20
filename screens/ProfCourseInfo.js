@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
-import { getCourseStudents, getActiveAttendanceSession, getSessionCheckIns, startAttendanceSession, stopAttendanceSession, subscribeToCheckIns } from '../backend/appwrite';
+import { getCourseStudents, getActiveAttendanceSession, getSessionCheckIns, startAttendanceSession, stopAttendanceSession, subscribeToCheckIns, updateCourse, deleteCourse } from '../backend/appwrite';
 
 export default function ProfCourseInfo({ navigation, route }) {
   const { course, onToggleAttendance } = route.params;
@@ -202,6 +202,41 @@ export default function ProfCourseInfo({ navigation, route }) {
     return '#FA2C37';
   };
 
+  const handleEditCourse = () => {
+    navigation.navigate('CreateCourse', { 
+      professorId: course.professorId,
+      course: course, // Pass course for edit mode
+      isEditMode: true 
+    });
+  };
+
+  const handleDeleteCourse = () => {
+    Alert.alert(
+      "Delete Course",
+      "Are you sure you want to delete this course? This will permanently delete the course, all attendance sessions, check-ins, and student enrollments. This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteCourse(courseId);
+              Alert.alert("Success", "Course deleted successfully.");
+              navigation.goBack();
+            } catch (error) {
+              console.error("Error deleting course:", error);
+              Alert.alert("Error", error.message || "Failed to delete course. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -259,6 +294,24 @@ export default function ProfCourseInfo({ navigation, route }) {
             </>
           )}
         </TouchableOpacity>
+
+        {/* Edit and Delete Buttons */}
+        <View style={styles.actionButtonsRow}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={handleEditCourse}
+          >
+            <MaterialIcons name="edit" size={18} color="#175EFC" />
+            <Text style={styles.editButtonText}>Edit Course</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDeleteCourse}
+          >
+            <MaterialIcons name="delete" size={18} color="#FA2C37" />
+            <Text style={styles.deleteButtonText}>Delete Course</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tabs */}
@@ -661,5 +714,42 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#777777',
     textAlign: 'center',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  editButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#175EFC',
+  },
+  editButtonText: {
+    color: '#175EFC',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  deleteButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  deleteButtonText: {
+    color: '#FA2C37',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
 });

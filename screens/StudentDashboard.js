@@ -141,9 +141,6 @@ export default function StudentDashboard({ navigation, route }) {
                 <MaterialIcons name="event" size={16} color="#777777" />
                 <Text style={styles.scheduleText}>{course.schedule}</Text>
               </View>
-              {course.nextClass && (
-                <Text style={styles.nextClassText}>Next: {course.nextClass}</Text>
-              )}
             </View>
 
             {/* Attendance Progress */}

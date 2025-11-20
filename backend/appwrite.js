@@ -175,7 +175,7 @@ export async function getAllCourses() {
 
       const enrolledStudents = enrollments.total || enrollments.rows.length;
 
-      // Get professor's email
+      // Get professor's name (fallback to email if name not available)
       let professor = null;
       if (course.professorId) {
         try {
@@ -184,7 +184,7 @@ export async function getAllCourses() {
             tableId: tables.users,
             rowId: course.professorId
           });
-          professor = profRow.email;
+          professor = profRow.name || profRow.email || null;
         } catch {
           professor = null; // professor might not exist
         }
@@ -475,6 +475,134 @@ export async function createCourse(professorId, name, code, schedule, location, 
     return result;
   } catch (error) {
     console.error("Error creating course:", error);
+    throw error;
+  }
+}
+
+/**
+ * Updates an existing course in the database
+ * @param {string} courseId The course's ID
+ * @param {string} name Course name
+ * @param {string} code Course code
+ * @param {string} schedule Course schedule
+ * @param {string} location Course location
+ * @param {number} locationLatitude Latitude of course location (optional)
+ * @param {number} locationLongitude Longitude of course location (optional)
+ * @returns {Promise<Object>} The updated course object
+ */
+export async function updateCourse(courseId, name, code, schedule, location, locationLatitude = null, locationLongitude = null) {
+  try {
+    const courseData = {
+      name,
+      code,
+      schedule,
+      location,
+    };
+
+    // Only add location coordinates if provided
+    if (locationLatitude !== null && locationLatitude !== undefined) {
+      courseData.locationLatitude = locationLatitude;
+    } else {
+      // If explicitly null, remove the field
+      courseData.locationLatitude = null;
+    }
+    if (locationLongitude !== null && locationLongitude !== undefined) {
+      courseData.locationLongitude = locationLongitude;
+    } else {
+      // If explicitly null, remove the field
+      courseData.locationLongitude = null;
+    }
+
+    const result = await tablesDB.updateRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.courses,
+      rowId: courseId,
+      data: courseData,
+    });
+
+    console.log("Updated course:", result);
+    return result;
+  } catch (error) {
+    console.error("Error updating course:", error);
+    throw error;
+  }
+}
+
+/**
+ * Deletes a course from the database
+ * @param {string} courseId The course's ID
+ * @returns {Promise<void>}
+ */
+export async function deleteCourse(courseId) {
+  try {
+    // First, delete all related data:
+    // 1. Delete all check-ins for sessions in this course
+    // 2. Delete all attendance sessions for this course
+    // 3. Delete all course enrollments
+    // 4. Finally, delete the course itself
+
+    // Get all attendance sessions for this course
+    const sessions = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.attendanceSessions,
+      queries: [
+        Query.equal("courseId", courseId)
+      ]
+    });
+
+    // Delete all check-ins for these sessions
+    for (const session of sessions.rows) {
+      const checkIns = await tablesDB.listRows({
+        databaseId: credentials.databaseId,
+        tableId: tables.checkIns,
+        queries: [
+          Query.equal("sessionId", session.$id)
+        ]
+      });
+      
+      for (const checkIn of checkIns.rows) {
+        await tablesDB.deleteRow({
+          databaseId: credentials.databaseId,
+          tableId: tables.checkIns,
+          rowId: checkIn.$id,
+        });
+      }
+
+      // Delete the session
+      await tablesDB.deleteRow({
+        databaseId: credentials.databaseId,
+        tableId: tables.attendanceSessions,
+        rowId: session.$id,
+      });
+    }
+
+    // Delete all course enrollments
+    const enrollments = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courseEnrollments,
+      queries: [
+        Query.equal("courseId", courseId)
+      ]
+    });
+
+    for (const enrollment of enrollments.rows) {
+      await tablesDB.deleteRow({
+        databaseId: credentials.databaseId,
+        tableId: tables.courseEnrollments,
+        rowId: enrollment.$id,
+      });
+    }
+
+    // Finally, delete the course
+    await tablesDB.deleteRow({
+      databaseId: credentials.databaseId,
+      tableId: tables.courses,
+      rowId: courseId,
+    });
+
+    console.log("Deleted course:", courseId);
+  } catch (error) {
+    console.error("Error deleting course:", error);
     throw error;
   }
 }
