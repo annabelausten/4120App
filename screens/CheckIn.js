@@ -40,7 +40,7 @@ export default function CheckIn({ navigation, route }) {
   const [distance, setDistance] = useState(null);
   const [subscription, setSubscription] = useState(null);
   const [timestamp, setTimestamp] = useState('');
-  const minDistance = 200;
+  const minDistance = 500;
 
   // Start location tracking
   const startLocationTracking = async () => {

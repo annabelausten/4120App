@@ -242,7 +242,7 @@ export default function CreateCourse({ navigation, route }) {
               </Text>
             ) : (
               <Text style={styles.helperText}>
-                Search and select a location to enable GPS verification (within 50 feet)
+                Search and select a location to enable GPS verification (within 500 feet)
               </Text>
             )}
             

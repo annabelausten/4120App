@@ -771,6 +771,49 @@ export const subscribeToCourse = (courseId) => {
 };
 
 /**
+ * Subscribes to realtime check-in changes for a specific attendance session
+ * @param {string} sessionId The attendance session ID to watch
+ * @returns {(callback: Function) => () => void} A function that takes a callback and returns an unsubscribe function
+ */
+export const subscribeToCheckIns = (sessionId) => {
+  return (callback) => {
+    try {
+      // Initial fetch of check-ins
+      getSessionCheckIns(sessionId).then((checkIns) => {
+        callback(checkIns);
+      });
+
+      // Subscribe to realtime events for checkIns table
+      const unsubscribe = client.subscribe(
+        `databases.${credentials.databaseId}.tables.${tables.checkIns}.rows`,
+        async (event) => {
+          const payload = event.payload;
+
+          // Ignore events for other sessions
+          if (payload.sessionId !== sessionId) return;
+
+          // New check-in created or updated
+          if (event.events.includes("databases.*.tables.*.rows.*.create") || 
+              event.events.includes("databases.*.tables.*.rows.*.update")) {
+            // Refresh all check-ins for this session
+            const checkIns = await getSessionCheckIns(sessionId);
+            callback(checkIns);
+            return;
+          }
+        }
+      );
+
+      // Return unsubscribe function
+      return () => unsubscribe();
+
+    } catch (error) {
+      console.error("Error setting up realtime check-in watcher:", error);
+      throw error;
+    }
+  };
+};
+
+/**
  * Creates a new check-in for a student for a given course's active session
  * @param {string} activeSession The course's active attendance session
  * @param {string} studentId The student's Appwrite user ID

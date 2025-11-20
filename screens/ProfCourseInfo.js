@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
-import { getCourseStudents, getActiveAttendanceSession, getSessionCheckIns, startAttendanceSession, stopAttendanceSession } from '../backend/appwrite';
+import { getCourseStudents, getActiveAttendanceSession, getSessionCheckIns, startAttendanceSession, stopAttendanceSession, subscribeToCheckIns } from '../backend/appwrite';
 
 export default function ProfCourseInfo({ navigation, route }) {
   const { course, onToggleAttendance } = route.params;
@@ -95,28 +95,68 @@ export default function ProfCourseInfo({ navigation, route }) {
     return unsubscribe;
   }, [courseId, navigation]);
 
-  // Set up auto-refresh polling for real-time check-ins when attendance is active
+  // Set up real-time subscription for check-ins when attendance is active
   useEffect(() => {
-    // Only poll when there's an active attendance session
-    if (!isAttendanceActive) {
-      return; // Don't poll if no active session
+    // Only subscribe when there's an active attendance session
+    if (!activeSession || !activeSession.$id) {
+      // Clear check-ins and reset student check-in status when no active session
+      setCheckIns([]);
+      setStudents(prevStudents => 
+        prevStudents.map(student => ({
+          ...student,
+          checkedIn: false,
+          timestamp: null,
+        }))
+      );
+      return; // Don't subscribe if no active session
     }
 
-    // Set up auto-refresh polling every 3 seconds to show real-time check-ins
-    const pollInterval = setInterval(async () => {
-      // Silently refresh check-in data without showing loading state
-      try {
-        await refreshScreenData();
-      } catch (error) {
-        console.error("Error refreshing check-in data:", error);
-      }
-    }, 3000); // Refresh every 3 seconds
+    // Set up real-time subscription for check-ins
+    const subscribeToCheckInsFn = subscribeToCheckIns(activeSession.$id);
+    const unsubscribe = subscribeToCheckInsFn(async (newCheckIns) => {
+      // Update check-ins state
+      setCheckIns(newCheckIns);
 
-    // Cleanup interval when component unmounts or attendance becomes inactive
+      // Refresh students data to update check-in status
+      try {
+        const studentsData = await getCourseStudents(courseId);
+        
+        // Update students with real-time check-in status
+        const studentsWithCheckIn = studentsData.map(student => {
+          const checkIn = newCheckIns.find(ci => ci.studentId === student.id);
+          if (checkIn) {
+            // Format timestamp
+            const date = new Date(checkIn.timestamp);
+            const timestamp = date.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit',
+              hour12: true 
+            });
+            return {
+              ...student,
+              checkedIn: true,
+              timestamp,
+            };
+          }
+          return {
+            ...student,
+            checkedIn: false,
+            timestamp: null,
+          };
+        });
+        setStudents(studentsWithCheckIn);
+      } catch (error) {
+        console.error("Error updating students with check-in data:", error);
+      }
+    });
+
+    // Cleanup subscription when component unmounts or session changes
     return () => {
-      clearInterval(pollInterval);
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
-  }, [isAttendanceActive, courseId]); // Re-run when attendance status changes
+  }, [activeSession?.$id, courseId]); // Re-run when active session changes
 
   const checkedInCount = students.filter((s) => s.checkedIn).length;
   const enrolledCount = students.length || course.enrolledStudents || 0;
