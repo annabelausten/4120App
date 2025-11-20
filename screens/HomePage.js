@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
+import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { createUserAccount, authenticateUser, getCurrentUser, getUserByEmail, logOut } from "../backend/appwrite";
 
 export default function HomePage({ navigation }) {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState("student"); // 'student' or 'professor'
@@ -32,6 +34,10 @@ export default function HomePage({ navigation }) {
 
   const handleCreateAccount = async () => {
     // Validate input
+    if (!name.trim()) {
+      Alert.alert("Error", "Please enter your name.");
+      return;
+    }
     if (!email.trim()) {
       Alert.alert("Error", "Please enter an email address.");
       return;
@@ -44,7 +50,7 @@ export default function HomePage({ navigation }) {
     setIsLoading(true);
     try {
       const isProfessor = selectedRole === "professor";
-      const user = await createUserAccount(email.trim(), password, isProfessor);
+      const user = await createUserAccount(name.trim(), email.trim(), password, isProfessor);
       
       Alert.alert(
         "Success",
@@ -125,116 +131,140 @@ export default function HomePage({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Icon */}
-      <FontAwesome5
-        name="user-circle"
-        size={80}
-        color="#175EFC"
-        style={{ marginTop: 80, marginBottom: 20 }}
-      />
+    <KeyboardAwareScrollView
+      contentContainerStyle={styles.scrollContainer}
+      enableOnAndroid={true}
+      enableAutomaticScroll={true}
+      keyboardShouldPersistTaps="handled"
+    >
+      <View style={styles.container}>
+        {/* Icon */}
+        <FontAwesome5
+          name="user-circle"
+          size={80}
+          color="#175EFC"
+          style={styles.icon}
+        />
 
-      {/* App Header */}
-      <Text style={styles.title}>ClassAttendance</Text>
+        {/* App Header */}
+        <Text style={styles.title}>ClassAttendance</Text>
 
-      {/* Role Selection */}
-      <View style={styles.roleContainer}>
-        <TouchableOpacity
-          style={[
-            styles.roleButton,
-            selectedRole === "student" && styles.roleButtonActive,
-          ]}
-          onPress={() => setSelectedRole("student")}
-        >
-          <MaterialIcons
-            name="school"
-            size={20}
-            color={selectedRole === "student" ? "#175EFC" : "#777777"}
-          />
-          <Text
+        {/* Role Selection */}
+        <View style={styles.roleContainer}>
+          <TouchableOpacity
             style={[
-              styles.roleButtonText,
-              selectedRole === "student" && styles.roleButtonTextActive,
+              styles.roleButton,
+              selectedRole === "student" && styles.roleButtonActive,
             ]}
+            onPress={() => setSelectedRole("student")}
           >
-            Student
+            <MaterialIcons
+              name="school"
+              size={20}
+              color={selectedRole === "student" ? "#175EFC" : "#777777"}
+            />
+            <Text
+              style={[
+                styles.roleButtonText,
+                selectedRole === "student" && styles.roleButtonTextActive,
+              ]}
+            >
+              Student
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.roleButton,
+              selectedRole === "professor" && styles.roleButtonActive,
+            ]}
+            onPress={() => setSelectedRole("professor")}
+          >
+            <MaterialIcons
+              name="person"
+              size={20}
+              color={selectedRole === "professor" ? "#175EFC" : "#777777"}
+            />
+            <Text
+              style={[
+                styles.roleButtonText,
+                selectedRole === "professor" && styles.roleButtonTextActive,
+              ]}
+            >
+              Professor
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Name Input */}
+        <TextInput
+          style={styles.inputBox}
+          placeholder="Name"
+          placeholderTextColor="#777777"
+          value={name}
+          onChangeText={setName}
+          autoCapitalize="words"
+        />
+
+        {/* Email Input */}
+        <TextInput
+          style={styles.inputBox}
+          placeholder="Email"
+          placeholderTextColor="#777777"
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+
+        {/* Password Input */}
+        <TextInput
+          style={styles.inputBox}
+          placeholder="Password"
+          placeholderTextColor="#777777"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+        />
+
+        {/* Sign In Button */}
+        <TouchableOpacity 
+          style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
+          onPress={handleSignIn}
+          disabled={isLoading}
+        >
+          <Text style={styles.signInButtonText}>
+            {isLoading ? "Loading..." : "Sign In"}
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.roleButton,
-            selectedRole === "professor" && styles.roleButtonActive,
-          ]}
-          onPress={() => setSelectedRole("professor")}
+        {/* Create Account Link */}
+        <TouchableOpacity 
+          onPress={handleCreateAccount}
+          disabled={isLoading}
         >
-          <MaterialIcons
-            name="person"
-            size={20}
-            color={selectedRole === "professor" ? "#175EFC" : "#777777"}
-          />
-          <Text
-            style={[
-              styles.roleButtonText,
-              selectedRole === "professor" && styles.roleButtonTextActive,
-            ]}
-          >
-            Professor
+          <Text style={[styles.createAccountLink, isLoading && styles.createAccountLinkDisabled]}>
+            Create a new account
           </Text>
         </TouchableOpacity>
       </View>
-
-      {/* Email Input */}
-      <TextInput
-        style={styles.inputBox}
-        placeholder="Email"
-        placeholderTextColor="#777777"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-
-      {/* Password Input */}
-      <TextInput
-        style={styles.inputBox}
-        placeholder="Password"
-        placeholderTextColor="#777777"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-
-      {/* Sign In Button */}
-      <TouchableOpacity 
-        style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
-        onPress={handleSignIn}
-        disabled={isLoading}
-      >
-        <Text style={styles.signInButtonText}>
-          {isLoading ? "Loading..." : "Sign In"}
-        </Text>
-      </TouchableOpacity>
-
-      {/* Create Account Link */}
-      <TouchableOpacity 
-        onPress={handleCreateAccount}
-        disabled={isLoading}
-      >
-        <Text style={[styles.createAccountLink, isLoading && styles.createAccountLinkDisabled]}>
-          Create a new account
-        </Text>
-      </TouchableOpacity>
-    </View>
+    </KeyboardAwareScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  scrollContainer: {
+    flexGrow: 1,
+  },
   container: {
     flex: 1,
     backgroundColor: "#FFFFFF",
     alignItems: "center",
-    justifyContent: "flex-start",
+    justifyContent: "center",
+    paddingVertical: 40,
+  },
+  icon: {
+    marginBottom: 20,
   },
   title: {
     fontSize: 28,

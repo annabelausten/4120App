@@ -52,12 +52,13 @@ export async function testFunction() {
 
 /**
  * Creates a new user account in the Users table
+ * @param {string} name The user's name
  * @param {string} email The user's email address
  * @param {string} password The user's password
  * @param {boolean} isProfessor Whether the user is a professor
  * @returns {Promise<Object>} The created user row
  */
-export async function createUserAccount(email, password, isProfessor) {
+export async function createUserAccount(name, email, password, isProfessor) {
   try {
     // Check if user with this email already exists
     const existingUsers = await tablesDB.listRows({
@@ -82,6 +83,7 @@ export async function createUserAccount(email, password, isProfessor) {
       tableId: tables.users,
       rowId: uniqueID,
       data: {
+        name: name,
         email: email,
         password: password,
         isProfessor: isProfessor,

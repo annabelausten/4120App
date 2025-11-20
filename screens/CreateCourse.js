@@ -5,9 +5,9 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   Alert,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
 import { createCourse } from '../backend/appwrite';
 import { searchPlaces, getPlaceDetails } from '../utils/googlePlaces';
@@ -159,7 +159,14 @@ export default function CreateCourse({ navigation, route }) {
       </View>
 
       {/* Form */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        enableOnAndroid={true}
+        enableAutomaticScroll={true}
+        keyboardShouldPersistTaps="handled"
+        extraScrollHeight={20}
+      >
         {/* Basic Info Card */}
         <View style={styles.card}>
           <View style={styles.inputGroup}>
@@ -274,7 +281,7 @@ export default function CreateCourse({ navigation, route }) {
             {isLoading ? "Creating..." : "Create Course"}
           </Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }
