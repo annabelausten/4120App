@@ -222,12 +222,12 @@ export default function CreateCourse({ navigation, route }) {
           <View style={styles.inputGroup}>
             <View style={styles.labelRow}>
               <Entypo name="location-pin" size={16} color="#333" />
-              <Text style={[styles.label, { marginLeft: 4 }]}>Classroom Location</Text>
+              <Text style={[styles.label, { marginLeft: 4, marginBottom: 0 }]}>Classroom Location</Text>
             </View>
             <View style={styles.locationInputContainer}>
               <TextInput
                 ref={locationInputRef}
-                style={styles.input}
+                style={[styles.input, { paddingRight: 50 }]}
                 placeholder="Search for a location..."
                 placeholderTextColor="#CCCBD0"
                 value={formData.location}
@@ -236,10 +236,6 @@ export default function CreateCourse({ navigation, route }) {
                   if (locationSuggestions.length > 0) {
                     setShowSuggestions(true);
                   }
-                }}
-                onBlur={() => {
-                  // Delay hiding suggestions to allow selection
-                  setTimeout(() => setShowSuggestions(false), 200);
                 }}
               />
               {isSearchingPlaces && (
@@ -345,6 +341,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    flexGrow: 1
   },
   inputGroup: {
     marginBottom: 16,
@@ -409,7 +406,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#CCCBD0',
-    maxHeight: 200,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,

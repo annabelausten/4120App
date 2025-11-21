@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, LayoutAnimation, UIManager, Platform } from "react-native";
 import { FontAwesome5, MaterialIcons } from "@expo/vector-icons";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { createUserAccount, authenticateUser, getCurrentUser, getUserByEmail, logOut } from "../backend/appwrite";
+
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export default function HomePage({ navigation }) {
   const [name, setName] = useState("");
@@ -10,6 +15,12 @@ export default function HomePage({ navigation }) {
   const [password, setPassword] = useState("");
   const [selectedRole, setSelectedRole] = useState("student"); // 'student' or 'professor'
   const [isLoading, setIsLoading] = useState(false);
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false); 
+
+  const toggleAccountMode = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsCreatingAccount(prev => !prev);
+  };
 
   // If already logged in, jump to student or professor page
   useEffect(() => {
@@ -196,15 +207,17 @@ export default function HomePage({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Name Input */}
-        <TextInput
-          style={styles.inputBox}
-          placeholder="Name"
-          placeholderTextColor="#777777"
-          value={name}
-          onChangeText={setName}
-          autoCapitalize="words"
-        />
+        {isCreatingAccount && (
+          <TextInput
+            style={styles.inputBox}
+            placeholder="Name"
+            placeholderTextColor="#777777"
+            value={name}
+            onChangeText={setName}
+            autoCapitalize="words"
+          />
+        )}
+        
 
         {/* Email Input */}
         <TextInput
@@ -227,26 +240,53 @@ export default function HomePage({ navigation }) {
           onChangeText={setPassword}
         />
 
-        {/* Sign In Button */}
-        <TouchableOpacity 
-          style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
-          onPress={handleSignIn}
-          disabled={isLoading}
-        >
-          <Text style={styles.signInButtonText}>
-            {isLoading ? "Loading..." : "Sign In"}
-          </Text>
-        </TouchableOpacity>
+        {/* Button and Option */}
+        {isCreatingAccount ? (
+          <>
+            <TouchableOpacity 
+              style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
+              onPress={handleCreateAccount}
+              disabled={isLoading}
+            >
+              <Text style={styles.signInButtonText}>
+                {isLoading ? "Loading..." : "Sign Up"}
+              </Text>
+            </TouchableOpacity>
 
-        {/* Create Account Link */}
-        <TouchableOpacity 
-          onPress={handleCreateAccount}
-          disabled={isLoading}
-        >
-          <Text style={[styles.createAccountLink, isLoading && styles.createAccountLinkDisabled]}>
-            Create a new account
-          </Text>
-        </TouchableOpacity>
+            {/* Create Account Link */}
+            <TouchableOpacity 
+              activeOpacity={1}
+              onPress={() => toggleAccountMode()}
+            >
+              <Text style={[styles.createAccountLink]}>
+                Back to Sign In
+              </Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity 
+              style={[styles.signInButton, isLoading && styles.signInButtonDisabled]} 
+              onPress={handleSignIn}
+              disabled={isLoading}
+            >
+              <Text style={styles.signInButtonText}>
+                {isLoading ? "Loading..." : "Sign In"}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Create Account Link */}
+            <TouchableOpacity 
+              activeOpacity={1}
+              onPress={() => toggleAccountMode()}
+            >
+              <Text style={[styles.createAccountLink]}>
+                Create a new account
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+        
       </View>
     </KeyboardAwareScrollView>
   );
@@ -332,7 +372,7 @@ const styles = StyleSheet.create({
   createAccountLink: {
     marginTop: 20,
     color: "#175EFC",
-    textDecorationLine: "underline",
+    fontWeight: 500,
     fontSize: 16,
   },
   createAccountLinkDisabled: {

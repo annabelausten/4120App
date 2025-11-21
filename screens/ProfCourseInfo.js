@@ -7,7 +7,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import { MaterialIcons, Entypo, MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCourseStudents, getActiveAttendanceSession, getSessionCheckIns, startAttendanceSession, stopAttendanceSession, subscribeToCheckIns, updateCourse, deleteCourse } from '../backend/appwrite';
 
 export default function ProfCourseInfo({ navigation, route }) {
@@ -351,60 +351,67 @@ export default function ProfCourseInfo({ navigation, route }) {
             <Text style={styles.loadingText}>Loading student data...</Text>
           </View>
         ) : activeTab === 'realtime' ? (
-          <>
-            {/* Stats Card */}
-            <View style={styles.statsCard}>
-              <View style={styles.statsRow}>
-                <View>
-                  <Text style={styles.statsLabel}>Checked In</Text>
-                  <Text style={styles.statsValue}>
-                    {checkedInCount} / {enrolledCount}
+          isAttendanceActive ? (
+            <>
+              {/* Stats Card */}
+              <View style={styles.statsCard}>
+                <View style={styles.statsRow}>
+                  <View>
+                    <Text style={styles.statsLabel}>Checked In</Text>
+                    <Text style={styles.statsValue}>
+                      {checkedInCount} / {enrolledCount}
+                    </Text>
+                  </View>
+                  <Text style={styles.statsPercentage}>
+                    {attendancePercentage.toFixed(0)}%
                   </Text>
                 </View>
-                <Text style={styles.statsPercentage}>
-                  {attendancePercentage.toFixed(0)}%
-                </Text>
+                <View style={styles.progressBarContainer}>
+                  <View
+                    style={[
+                      styles.progressBar,
+                      { width: `${attendancePercentage}%` },
+                    ]}
+                  />
+                </View>
               </View>
-              <View style={styles.progressBarContainer}>
-                <View
-                  style={[
-                    styles.progressBar,
-                    { width: `${attendancePercentage}%` },
-                  ]}
-                />
-              </View>
-            </View>
 
-            {/* Students List */}
-            <Text style={styles.sectionTitle}>Students</Text>
-            {students.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>No students enrolled in this course yet.</Text>
-              </View>
-            ) : (
-              students.map((student) => (
-                <View key={student.id} style={styles.studentCard}>
-                  <View style={styles.studentInfo}>
-                    <Text style={styles.studentName}>{student.name}</Text>
-                    {student.timestamp && (
-                      <Text style={styles.studentTimestamp}>
-                        Checked in at {student.timestamp}
-                      </Text>
+              {/* Students List */}
+              <Text style={styles.sectionTitle}>Students</Text>
+              {students.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No students enrolled in this course yet.</Text>
+                </View>
+              ) : (
+                students.map((student) => (
+                  <View key={student.id} style={styles.studentCard}>
+                    <View style={styles.studentInfo}>
+                      <Text style={styles.studentName}>{student.name}</Text>
+                      {student.timestamp && (
+                        <Text style={styles.studentTimestamp}>
+                          Checked in at {student.timestamp}
+                        </Text>
+                      )}
+                    </View>
+                    {student.checkedIn ? (
+                      <View style={styles.presentBadge}>
+                        <Text style={styles.presentBadgeText}>Present</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.absentBadge}>
+                        <Text style={styles.absentBadgeText}>Absent</Text>
+                      </View>
                     )}
                   </View>
-                  {student.checkedIn ? (
-                    <View style={styles.presentBadge}>
-                      <Text style={styles.presentBadgeText}>Present</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.absentBadge}>
-                      <Text style={styles.absentBadgeText}>Absent</Text>
-                    </View>
-                  )}
-                </View>
-              ))
-            )}
-          </>
+                ))
+              )}
+            </>
+          ) : (
+            <View style={{flex: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginBottom: 40}}>
+              <MaterialCommunityIcons name="table-cancel" size={100} color="gray" />
+              <Text style={styles.notActiveAttendance}>Session Not Active</Text>
+            </View>
+          )
         ) : (
           <>
             {/* Trends Header */}
@@ -497,6 +504,13 @@ const styles = StyleSheet.create({
     color: '#DBFCE5',
     marginTop: 4,
   },
+  notActiveAttendance: {
+    fontSize: 18,
+    textAlign: 'center',
+    fontWeight: 700,
+    color: 'gray',
+    marginTop: 20
+  },
   courseDetails: {
     marginBottom: 16,
   },
@@ -557,6 +571,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    flex: 1,
     padding: 20,
   },
   statsCard: {
