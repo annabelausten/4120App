@@ -306,7 +306,7 @@ export default function CreateCourse({ navigation, route }) {
             <Text style={styles.label}>Course Code</Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g., CS 101"
+              placeholder="e.g., CIS 4120"
               placeholderTextColor="#CCCBD0"
               value={formData.code}
               onChangeText={(text) => setFormData({ ...formData, code: text })}
