@@ -34,24 +34,7 @@ export default function StudentDashboard({ navigation, route }) {
           const result = await getStudentCourseList(student.$id);
           console.log("Fetched student courses:", result);
           
-          // Check check-in status for courses with active sessions
-          const coursesWithCheckInStatus = await Promise.all(
-            updateAllCoursesSchedules(result).map(async (course) => {
-              if (course.hasActiveAttendance && course.activeSession) {
-                const checkedIn = await hasStudentCheckedIn(course.activeSession.$id, student.$id);
-                return {
-                  ...course,
-                  hasCheckedIn: checkedIn,
-                };
-              }
-              return {
-                ...course,
-                hasCheckedIn: false,
-              };
-            })
-          );
-          
-          setCourses(coursesWithCheckInStatus);
+          setCourses(updateAllCoursesSchedules(result));
           
         // Fetch user's name
         const name = await getCurrentUserName();
@@ -106,63 +89,7 @@ export default function StudentDashboard({ navigation, route }) {
     return () => {
       unsubscribes.forEach(unsub => unsub && unsub());
     };
-  }, [courses.length]);
-
-  // Refresh check-in status when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      let isMounted = true;
-      
-      const refreshCheckInStatus = async () => {
-        try {
-          const student = await getCurrentUser();
-          if (!student) return;
-
-          // Get current courses from ref to avoid stale closure
-          const currentCourses = coursesRef.current;
-          if (!currentCourses || currentCourses.length === 0) return;
-
-          // Update check-in status for all courses
-          const updatedCourses = await Promise.all(
-            currentCourses.map(async (course) => {
-              if (course.hasActiveAttendance && course.activeSession) {
-                try {
-                  const checkedIn = await hasStudentCheckedIn(course.activeSession.$id, student.$id);
-                  return {
-                    ...course,
-                    hasCheckedIn: checkedIn === true, // Ensure it's explicitly boolean
-                  };
-                } catch (error) {
-                  console.error('Error checking check-in status for course:', course.$id, error);
-                  return {
-                    ...course,
-                    hasCheckedIn: false, // Default to false on error
-                  };
-                }
-              }
-              return {
-                ...course,
-                hasCheckedIn: false, // Explicitly set to false if no active session
-              };
-            })
-          );
-
-          // Only update state if component is still mounted
-          if (isMounted) {
-            setCourses(updatedCourses);
-          }
-        } catch (error) {
-          console.error('Error refreshing check-in status:', error);
-        }
-      };
-
-      refreshCheckInStatus();
-
-      return () => {
-        isMounted = false;
-      };
-    }, [])
-  );
+  }, [courses]);
 
   // Handle new course enrollment
   useEffect(() => {
@@ -173,24 +100,6 @@ export default function StudentDashboard({ navigation, route }) {
     }
   }, [route.params?.newCourse]);
 
-  // Handle check-in completion
-  useEffect(() => {
-    if (route.params?.checkedInCourseId) {
-      const courseId = route.params.checkedInCourseId;
-      setCourses(courses.map(course => 
-        course.id === courseId 
-          ? { 
-              ...course, 
-              attended: course.attended + 1,
-              totalClasses: course.totalClasses + 1,
-              attendanceRate: Math.round(((course.attended + 1) / (course.totalClasses + 1)) * 100),
-            }
-          : course
-      ));
-      // Clear the parameter
-      navigation.setParams({ checkedInCourseId: undefined });
-    }
-  }, [route.params?.checkedInCourseId]);
 
   const getAttendanceColor = (rate) => {
     if (rate >= 90) return '#00C851';
