@@ -64,7 +64,7 @@ A React Native mobile application for managing class attendance with location-ba
 
 ### Courses Table
 - `$id`: Unique course ID
-- `code`: Course code (e.g., "CS 101")
+- `code`: Course code (e.g., "CIS 4120")
 - `name`: Course name
 - `schedule`: Course schedule (e.g., "MWF 10:15 AM - 11:05 AM")
 - `location`: Course location address
