@@ -149,6 +149,29 @@ export async function getCurrentUser() {
 }
 
 /**
+ * Gets the current user's name from the Users table
+ * @returns {Promise<string|null>} User's name if found, null otherwise
+ */
+export async function getCurrentUserName() {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return null;
+    }
+
+    const userRow = await getUserById(user.$id);
+    if (!userRow) {
+      return null;
+    }
+
+    return userRow.name || null;
+  } catch (error) {
+    console.error("Error getting current user name:", error);
+    return null;
+  }
+}
+
+/**
  * Fetches all courses and augments them with the number of enrolled students and professor's email
  * @returns {Promise<Object[]>} Array of courses with fields: enrolledStudents and professor
  */
