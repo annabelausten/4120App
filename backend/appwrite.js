@@ -290,6 +290,46 @@ export async function getStudentEnrollments(studentId) {
 }
 
 /**
+ * Drops a student from a course by deleting the enrollment record
+ * @param {string} studentId The student's Appwrite user ID
+ * @param {string} courseId The course's Appwrite document ID
+ * @returns {Promise<boolean>} True if successfully dropped, false otherwise
+ */
+export async function dropCourse(studentId, courseId) {
+  try {
+    // Find the enrollment record
+    const enrollments = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.courseEnrollments,
+      queries: [
+        Query.equal("studentId", studentId),
+        Query.equal("courseId", courseId)
+      ]
+    });
+
+    if (enrollments.rows.length === 0) {
+      console.log("No enrollment found to drop");
+      return false;
+    }
+
+    // Delete all enrollment records (should only be one, but handle multiple just in case)
+    for (const enrollment of enrollments.rows) {
+      await tablesDB.deleteRow({
+        databaseId: credentials.databaseId,
+        tableId: tables.courseEnrollments,
+        rowId: enrollment.$id,
+      });
+    }
+
+    console.log("Successfully dropped course:", courseId);
+    return true;
+  } catch (error) {
+    console.error("Error dropping course:", error);
+    throw error;
+  }
+}
+
+/**
  * Fetches all courses a student is enrolled in and calculates real-time attendance stats.
  * @param {string} studentId The Appwrite user ID of the student
  * @returns {Promise<Object[]>} Array of course objects with attended, totalClasses, and attendanceRate

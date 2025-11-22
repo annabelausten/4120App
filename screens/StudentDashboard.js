@@ -5,11 +5,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
-import { getCurrentUser, getCurrentUserName, getStudentCourseList, logOut, subscribeToCourse } from '../backend/appwrite';
+import { getCurrentUser, getCurrentUserName, getStudentCourseList, logOut, subscribeToCourse, dropCourse } from '../backend/appwrite';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function StudentDashboard({ navigation, route }) {
@@ -111,6 +112,44 @@ export default function StudentDashboard({ navigation, route }) {
     navigation.replace('Home');
   };
 
+  const handleDropCourse = (course) => {
+    Alert.alert(
+      "Drop Course",
+      `Are you sure you want to drop ${course.code} - ${course.name}? This action cannot be undone.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Drop",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const student = await getCurrentUser();
+              if (!student) {
+                Alert.alert("Error", "Unable to identify student. Please try again.");
+                return;
+              }
+              
+              const success = await dropCourse(student.$id, course.$id);
+              if (success) {
+                // Remove the course from the local state
+                setCourses(courses.filter(c => c.$id !== course.$id));
+                Alert.alert("Success", "Course dropped successfully.");
+              } else {
+                Alert.alert("Error", "Failed to drop course. Please try again.");
+              }
+            } catch (error) {
+              console.error("Error dropping course:", error);
+              Alert.alert("Error", error.message || "Failed to drop course. Please try again.");
+            }
+          }
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -148,7 +187,16 @@ export default function StudentDashboard({ navigation, route }) {
         </View>
       ) : (
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
-          {courses.map((course) => (
+          {courses.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialIcons name="event" size={48} color="#CCCBD0" />
+              <Text style={styles.emptyStateTitle}>No courses yet</Text>
+              <Text style={styles.emptyStateSubtitle}>
+                Enroll in a course to get started
+              </Text>
+            </View>
+          ) : (
+            courses.map((course) => (
             <View key={course.$id} style={styles.courseCard}>
               {/* Course Header */}
               <View style={styles.courseHeader}>
@@ -156,11 +204,19 @@ export default function StudentDashboard({ navigation, route }) {
                   <Text style={styles.courseCode}>{course.code}</Text>
                   <Text style={styles.courseName}>{course.name}</Text>
                 </View>
-                {course.hasActiveAttendance && (
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>Check-in Open</Text>
-                  </View>
-                )}
+                <View style={styles.headerRight}>
+                  {course.hasActiveAttendance && (
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>Check-in Open</Text>
+                    </View>
+                  )}
+                  <TouchableOpacity 
+                    style={styles.dropButton}
+                    onPress={() => handleDropCourse(course)}
+                  >
+                    <MaterialIcons name="delete-outline" size={16} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
               </View>
 
               {/* Schedule Info */}
@@ -220,8 +276,10 @@ export default function StudentDashboard({ navigation, route }) {
                   </TouchableOpacity>
                 )}
               </View>
+              
             </View>
-          ))}
+          ))
+          )}
         </ScrollView>
       )}
     </View>
@@ -310,6 +368,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   courseInfo: {
     flex: 1,
@@ -424,5 +487,36 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  emptyState: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    color: '#777777',
+    marginTop: 12,
+    fontWeight: '600',
+  },
+  emptyStateSubtitle: {
+    fontSize: 14,
+    color: '#CCCBD0',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  dropButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+    backgroundColor: '#FA2C37',
   },
 });
