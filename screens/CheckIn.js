@@ -108,15 +108,6 @@ export default function CheckIn({ navigation, route }) {
         })
       );
       
-      setInterval(() => {
-        navigation.navigate('StudentDashboard', {newCheckIn: {
-          ...course, 
-          attended: course.attended + 1,
-          totalClasses: course.totalClasses + 1,
-          attendanceRate: Math.round(((course.attended + 1) / (course.totalClasses + 1)) * 100),
-          hasActiveAttendance: false,
-        }});
-      }, 3000);
     } catch (error) {
       console.error(error);
       setCheckInStatus('failed');
@@ -250,7 +241,7 @@ export default function CheckIn({ navigation, route }) {
                 <View style={[styles.alert, styles.alertSuccess]}>
                   <MaterialIcons name="check-circle" size={16} color="#00C851" />
                   <Text style={styles.alertTextSuccess}>
-                    Your attendance has been recorded, redirecting back to dashboard...
+                    Your attendance has been recorded
                   </Text>
                 </View>
               </>
