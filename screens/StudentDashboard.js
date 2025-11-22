@@ -46,10 +46,7 @@ export default function StudentDashboard({ navigation, route }) {
 
   // Update course schedules on mount, subscribe to active sessions
   useEffect(() => {
-    // 1. Update schedules immediately
-    setCourses(prev => updateAllCoursesSchedules(prev));
-
-    // 2. Create one realtime listener per course
+    // 1. Create one realtime listener per course
     const unsubscribes = courses.map(course => {
       return subscribeToCourse(course.$id)((update) => {
         setCourses(prevCourses => {
@@ -70,7 +67,7 @@ export default function StudentDashboard({ navigation, route }) {
     return () => {
       unsubscribes.forEach(unsub => unsub && unsub());
     };
-  }, [courses.length]);
+  }, [courses]);
 
   // Handle new course enrollment
   useEffect(() => {

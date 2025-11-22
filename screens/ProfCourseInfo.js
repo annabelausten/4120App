@@ -384,7 +384,7 @@ export default function ProfCourseInfo({ navigation, route }) {
                 </View>
               ) : (
                 students.map((student) => (
-                  <View key={student.id} style={styles.studentCard}>
+                  <View key={student.$id} style={styles.studentCard}>
                     <View style={styles.studentInfo}>
                       <Text style={styles.studentName}>{student.name}</Text>
                       {student.timestamp && (
@@ -433,7 +433,7 @@ export default function ProfCourseInfo({ navigation, route }) {
               students
                 .sort((a, b) => b.attendanceRate - a.attendanceRate)
                 .map((student) => (
-                  <View key={student.id} style={styles.trendCard}>
+                  <View key={student.$id} style={styles.trendCard}>
                     <View style={styles.trendHeader}>
                       <View>
                         <Text style={styles.studentName}>{student.name}</Text>

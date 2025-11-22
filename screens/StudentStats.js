@@ -129,7 +129,7 @@ export default function StudentStats({ navigation, route }) {
             coursesWithData
               .sort((a, b) => b.attendanceRate - a.attendanceRate)
               .map((course) => (
-                <View key={course.id} style={styles.courseCard}>
+                <View key={course.$id} style={styles.courseCard}>
                   <View style={styles.courseHeader}>
                     <View style={styles.courseInfo}>
                       <Text style={styles.courseCode}>{course.code}</Text>
