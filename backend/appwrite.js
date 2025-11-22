@@ -1047,3 +1047,31 @@ export async function createCheckIn(activeSession, studentId) {
     throw error;
   }
 }
+
+/**
+ * Checks if a student has already checked in for a specific attendance session
+ * @param {string} sessionId The attendance session ID
+ * @param {string} studentId The student's Appwrite user ID
+ * @returns {Promise<boolean>} True if student has checked in, false otherwise
+ */
+export async function hasStudentCheckedIn(sessionId, studentId) {
+  try {
+    if (!sessionId || !studentId) {
+      return false;
+    }
+
+    const checkIns = await tablesDB.listRows({
+      databaseId: credentials.databaseId,
+      tableId: tables.checkIns,
+      queries: [
+        Query.equal('sessionId', sessionId),
+        Query.equal('studentId', studentId),
+      ],
+    });
+
+    return checkIns.rows.length > 0;
+  } catch (error) {
+    console.error('Error checking if student has checked in:', error);
+    return false;
+  }
+}

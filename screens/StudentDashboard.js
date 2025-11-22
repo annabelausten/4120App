@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
-import { getCurrentUser, getCurrentUserName, getStudentCourseList, logOut, subscribeToCourse, dropCourse } from '../backend/appwrite';
+import { getCurrentUser, getCurrentUserName, getStudentCourseList, logOut, subscribeToCourse, dropCourse, hasStudentCheckedIn } from '../backend/appwrite';
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function StudentDashboard({ navigation, route }) {
@@ -27,7 +27,25 @@ export default function StudentDashboard({ navigation, route }) {
           const student = await getCurrentUser();
           const result = await getStudentCourseList(student.$id);
           console.log("Fetched student courses:", result);
-          setCourses(updateAllCoursesSchedules(result));
+          
+          // Check check-in status for courses with active sessions
+          const coursesWithCheckInStatus = await Promise.all(
+            updateAllCoursesSchedules(result).map(async (course) => {
+              if (course.hasActiveAttendance && course.activeSession) {
+                const checkedIn = await hasStudentCheckedIn(course.activeSession.$id, student.$id);
+                return {
+                  ...course,
+                  hasCheckedIn: checkedIn,
+                };
+              }
+              return {
+                ...course,
+                hasCheckedIn: false,
+              };
+            })
+          );
+          
+          setCourses(coursesWithCheckInStatus);
           
         // Fetch user's name
         const name = await getCurrentUserName();
@@ -49,7 +67,20 @@ export default function StudentDashboard({ navigation, route }) {
   useEffect(() => {
     // 1. Create one realtime listener per course
     const unsubscribes = courses.map(course => {
-      return subscribeToCourse(course.$id)((update) => {
+      return subscribeToCourse(course.$id)(async (update) => {
+        // Check if student has checked in for the active session
+        let hasCheckedIn = false;
+        if (update.session && update.isActive) {
+          try {
+            const student = await getCurrentUser();
+            if (student) {
+              hasCheckedIn = await hasStudentCheckedIn(update.session.$id, student.$id);
+            }
+          } catch (error) {
+            console.error('Error checking check-in status:', error);
+          }
+        }
+
         setCourses(prevCourses => {
           return prevCourses.map(c => {
             if (c.$id !== course.$id) return c;
@@ -58,6 +89,7 @@ export default function StudentDashboard({ navigation, route }) {
               ...c,
               activeSession: update.session,
               hasActiveAttendance: update.isActive,
+              hasCheckedIn: hasCheckedIn,
             };
           });
         });
@@ -68,7 +100,50 @@ export default function StudentDashboard({ navigation, route }) {
     return () => {
       unsubscribes.forEach(unsub => unsub && unsub());
     };
-  }, [courses]);
+  }, [courses.length]);
+
+  // Refresh check-in status when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const refreshCheckInStatus = async () => {
+        try {
+          const student = await getCurrentUser();
+          if (!student) return;
+
+          // Get current courses and update check-in status
+          setCourses(prevCourses => {
+            if (prevCourses.length === 0) return prevCourses;
+
+            // Update check-in status asynchronously
+            Promise.all(
+              prevCourses.map(async (course) => {
+                if (course.hasActiveAttendance && course.activeSession) {
+                  const checkedIn = await hasStudentCheckedIn(course.activeSession.$id, student.$id);
+                  return {
+                    ...course,
+                    hasCheckedIn: checkedIn,
+                  };
+                }
+                return {
+                  ...course,
+                  hasCheckedIn: false,
+                };
+              })
+            ).then(updatedCourses => {
+              setCourses(updatedCourses);
+            });
+
+            // Return current courses while update is in progress
+            return prevCourses;
+          });
+        } catch (error) {
+          console.error('Error refreshing check-in status:', error);
+        }
+      };
+
+      refreshCheckInStatus();
+    }, [])
+  );
 
   // Handle new course enrollment
   useEffect(() => {
@@ -252,13 +327,19 @@ export default function StudentDashboard({ navigation, route }) {
               {/* Action Buttons */}
               <View style={styles.buttonRow}>
                 {course.hasActiveAttendance ? (
-                  <TouchableOpacity 
-                    style={styles.checkInButton}
-                    onPress={() => navigation.navigate('CheckIn', { course })}
-                  >
-                    <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
-                    <Text style={styles.checkInButtonText}>Check In Now</Text>
-                  </TouchableOpacity>
+                  course.hasCheckedIn ? (
+                    <View style={styles.disabledButton}>
+                      <Text style={styles.disabledButtonText}>Already Checked In</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity 
+                      style={styles.checkInButton}
+                      onPress={() => navigation.navigate('CheckIn', { course })}
+                    >
+                      <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
+                      <Text style={styles.checkInButtonText}>Check In Now</Text>
+                    </TouchableOpacity>
+                  )
                 ) : (
                   <View style={styles.disabledButton}>
                     <Text style={styles.disabledButtonText}>Check-in Not Available</Text>
