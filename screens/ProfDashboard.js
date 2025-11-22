@@ -7,11 +7,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import { getProfessorCourses, getActiveAttendanceSession, logOut } from '../backend/appwrite';
+import { getProfessorCourses, getActiveAttendanceSession, getCurrentUserName, logOut } from '../backend/appwrite';
 
 export default function ProfDashboard({ navigation, route }) {
   const [courses, setCourses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [userName, setUserName] = useState('');
   const professorId = route.params?.professorId;
 
   // Fetch courses from database on load
@@ -38,6 +39,12 @@ export default function ProfDashboard({ navigation, route }) {
         );
         
         setCourses(coursesWithActiveStatus);
+        
+        // Fetch user's name
+        const name = await getCurrentUserName();
+        if (name) {
+          setUserName(name);
+        }
       } catch (error) {
         console.error("Error fetching professor courses:", error);
       } finally {
@@ -124,14 +131,20 @@ export default function ProfDashboard({ navigation, route }) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>My Courses</Text>
-            <Text style={styles.headerSubtitle}>Professor Dashboard</Text>
-          </View>
+        <View style={styles.greetingRow}>
+          {userName ? (
+            <Text style={styles.greeting}>
+              <Text style={styles.greetingPrefix}>Hello, </Text>
+              <Text style={styles.greetingName}>{userName}</Text>
+            </Text>
+          ) : null}
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
             <MaterialIcons name="logout" size={24} color="#FFFFFF" />
           </TouchableOpacity>
+        </View>
+        <View style={styles.titleRow}>
+          <Text style={styles.headerTitle}>My Courses</Text>
+          <Text style={styles.headerSubtitle}>Professor Dashboard</Text>
         </View>
 
         <TouchableOpacity
@@ -212,10 +225,25 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 24,
   },
-  headerTop: {
+  greetingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
+  },
+  greeting: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+    fontStyle: 'italic',
+  },
+  greetingPrefix: {
+    fontWeight: '400',
+  },
+  greetingName: {
+    fontWeight: '700',
+  },
+  titleRow: {
     marginBottom: 20,
   },
   headerTitle: {

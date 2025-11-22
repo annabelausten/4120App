@@ -8,24 +8,31 @@ import {
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
-import { getCurrentUser, getStudentCourseList, logOut, subscribeToCourse } from '../backend/appwrite';
+import { getCurrentUser, getCurrentUserName, getStudentCourseList, logOut, subscribeToCourse } from '../backend/appwrite';
 
 export default function StudentDashboard({ navigation, route }) {
   const [courses, setCourses] = useState([]);
+  const [userName, setUserName] = useState('');
 
-  // Fetch student's courses on load
+  // Fetch student's courses and name on load
   useEffect(() => {
-    const fetchCourses = async () => {
+    const fetchData = async () => {
       try {
         const student = await getCurrentUser();
         const result = await getStudentCourseList(student.$id);
         console.log("Fetched student courses:", result);
         setCourses(updateAllCoursesSchedules(result));
+        
+        // Fetch user's name
+        const name = await getCurrentUserName();
+        if (name) {
+          setUserName(name);
+        }
       } catch (error) {
         console.error(error);
       }
     }
-    fetchCourses();
+    fetchData();
   }, []);
 
   // Update course schedules on mount, subscribe to active sessions
@@ -99,14 +106,20 @@ export default function StudentDashboard({ navigation, route }) {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>My Classes</Text>
-            <Text style={styles.headerSubtitle}>Student Dashboard</Text>
-          </View>
+        <View style={styles.greetingRow}>
+          {userName ? (
+            <Text style={styles.greeting}>
+              <Text style={styles.greetingPrefix}>Hello, </Text>
+              <Text style={styles.greetingName}>{userName}</Text>
+            </Text>
+          ) : null}
           <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
             <MaterialIcons name="logout" size={24} color="#FFFFFF" />
           </TouchableOpacity>
+        </View>
+        <View style={styles.titleRow}>
+          <Text style={styles.headerTitle}>My Classes</Text>
+          <Text style={styles.headerSubtitle}>Student Dashboard</Text>
         </View>
 
         <TouchableOpacity 
@@ -210,10 +223,25 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 24,
   },
-  headerTop: {
+  greetingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 6,
+  },
+  greeting: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+    fontStyle: 'italic',
+  },
+  greetingPrefix: {
+    fontWeight: '400',
+  },
+  greetingName: {
+    fontWeight: '700',
+  },
+  titleRow: {
     marginBottom: 20,
   },
   headerTitle: {
