@@ -1,52 +1,163 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  Alert,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import { createCourse, updateCourse } from '../backend/appwrite';
+import { searchPlaces, getPlaceDetails } from '../utils/googlePlaces';
 
-export default function CreateCourse({ navigation }) {
+export default function CreateCourse({ navigation, route }) {
+  const professorId = route.params?.professorId;
+  const existingCourse = route.params?.course;
+  const isEditMode = route.params?.isEditMode || false;
+  
   const [formData, setFormData] = useState({
-    name: '',
-    code: '',
-    schedule: '',
-    location: '',
-    windowStart: '',
-    windowEnd: '',
-    days: [],
+    name: existingCourse?.name || '',
+    code: existingCourse?.code || '',
+    schedule: existingCourse?.schedule || '',
+    location: existingCourse?.location || '',
+    locationLatitude: existingCourse?.locationLatitude || null,
+    locationLongitude: existingCourse?.locationLongitude || null,
   });
+  const [isLoading, setIsLoading] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const locationInputRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
 
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  // Handle location input change with autocomplete
+  const handleLocationChange = async (text) => {
+    setFormData((prev) => ({ ...prev, location: text }));
+    
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
 
-  const handleDayToggle = (day) => {
-    setFormData((prev) => ({
-      ...prev,
-      days: prev.days.includes(day)
-        ? prev.days.filter((d) => d !== day)
-        : [...prev.days, day],
-    }));
+    // If text is empty, hide suggestions
+    if (!text.trim()) {
+      setShowSuggestions(false);
+      setLocationSuggestions([]);
+      return;
+    }
+
+    // Debounce search - wait 500ms after user stops typing
+    searchTimeoutRef.current = setTimeout(async () => {
+      setIsSearchingPlaces(true);
+      const suggestions = await searchPlaces(text);
+      setLocationSuggestions(suggestions);
+      setShowSuggestions(suggestions.length > 0);
+      setIsSearchingPlaces(false);
+    }, 500);
   };
 
-  const handleSubmit = () => {
-    const newCourse = {
-      name: formData.name,
-      code: formData.code,
-      schedule: formData.schedule,
-      location: formData.location,
-      attendanceWindow: {
-        start: formData.windowStart,
-        end: formData.windowEnd,
-        days: formData.days,
-      },
-      isActive: false,
-    };
+  // Handle location selection from suggestions
+  const handleLocationSelect = async (suggestion) => {
+    setFormData((prev) => ({ ...prev, location: suggestion.description }));
+    setShowSuggestions(false);
+    setLocationSuggestions([]);
+
+    // Get place details to retrieve coordinates
+    setIsSearchingPlaces(true);
+    const placeDetails = await getPlaceDetails(suggestion.placeId);
     
-    // Navigate back with new course data
-    navigation.navigate('ProfDashboard', { newCourse });
+    if (placeDetails) {
+      setFormData((prev) => ({
+        ...prev,
+        location: placeDetails.formattedAddress || suggestion.description,
+        locationLatitude: placeDetails.latitude,
+        locationLongitude: placeDetails.longitude,
+      }));
+      Alert.alert(
+        "Location Confirmed",
+        `Coordinates saved for: ${placeDetails.formattedAddress || suggestion.description}`
+      );
+    } else {
+      Alert.alert(
+        "Warning",
+        "Could not retrieve coordinates for this location. The course will be created without GPS coordinates."
+      );
+    }
+    setIsSearchingPlaces(false);
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleSubmit = async () => {
+    // Validate required fields
+    if (!formData.name.trim()) {
+      Alert.alert("Error", "Please enter a course name.");
+      return;
+    }
+    if (!formData.code.trim()) {
+      Alert.alert("Error", "Please enter a course code.");
+      return;
+    }
+    if (!formData.schedule.trim()) {
+      Alert.alert("Error", "Please enter a schedule.");
+      return;
+    }
+    if (!formData.location.trim()) {
+      Alert.alert("Error", "Please enter a location.");
+      return;
+    }
+    if (!professorId && !isEditMode) {
+      Alert.alert("Error", "Professor ID is missing. Please try logging in again.");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (isEditMode && existingCourse) {
+        // Update existing course
+        await updateCourse(
+          existingCourse.$id || existingCourse.id,
+          formData.name.trim(),
+          formData.code.trim(),
+          formData.schedule.trim(),
+          formData.location.trim(),
+          formData.locationLatitude,
+          formData.locationLongitude
+        );
+        Alert.alert("Success", "Course updated successfully.");
+      } else {
+        // Create new course
+        await createCourse(
+          professorId,
+          formData.name.trim(),
+          formData.code.trim(),
+          formData.schedule.trim(),
+          formData.location.trim(),
+          formData.locationLatitude,
+          formData.locationLongitude
+        );
+      }
+
+      // Navigate back to dashboard (courses will refresh automatically)
+      navigation.goBack();
+    } catch (error) {
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} course:`, error);
+      Alert.alert(
+        "Error",
+        error.message || `Failed to ${isEditMode ? 'update' : 'create'} course. Please try again.`
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -60,12 +171,19 @@ export default function CreateCourse({ navigation }) {
           >
             <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Create New Course</Text>
+          <Text style={styles.headerTitle}>{isEditMode ? 'Edit Course' : 'Create New Course'}</Text>
         </View>
       </View>
 
       {/* Form */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <KeyboardAwareScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        enableOnAndroid={true}
+        enableAutomaticScroll={true}
+        keyboardShouldPersistTaps="handled"
+        extraScrollHeight={20}
+      >
         {/* Basic Info Card */}
         <View style={styles.card}>
           <View style={styles.inputGroup}>
@@ -104,85 +222,81 @@ export default function CreateCourse({ navigation }) {
           <View style={styles.inputGroup}>
             <View style={styles.labelRow}>
               <Entypo name="location-pin" size={16} color="#333" />
-              <Text style={[styles.label, { marginLeft: 4 }]}>Classroom Location</Text>
+              <Text style={[styles.label, { marginLeft: 4, marginBottom: 0 }]}>Classroom Location</Text>
             </View>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Engineering Hall, Room 201"
-              placeholderTextColor="#CCCBD0"
-              value={formData.location}
-              onChangeText={(text) => setFormData({ ...formData, location: text })}
-            />
-            <Text style={styles.helperText}>
-              GPS will verify within 50 feet of this location
-            </Text>
-          </View>
-        </View>
-
-        {/* Attendance Window Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <MaterialIcons name="schedule" size={20} color="#175EFC" />
-            <Text style={styles.cardHeaderText}>Attendance Window</Text>
-          </View>
-
-          <View style={styles.timeRow}>
-            <View style={styles.timeInput}>
-              <Text style={styles.label}>Start Time</Text>
+            <View style={styles.locationInputContainer}>
               <TextInput
-                style={styles.input}
-                placeholder="10:15"
+                ref={locationInputRef}
+                style={[styles.input, { paddingRight: 50 }]}
+                placeholder="Search for a location..."
                 placeholderTextColor="#CCCBD0"
-                value={formData.windowStart}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, windowStart: text })
-                }
+                value={formData.location}
+                onChangeText={handleLocationChange}
+                onFocus={() => {
+                  if (locationSuggestions.length > 0) {
+                    setShowSuggestions(true);
+                  }
+                }}
               />
-            </View>
-
-            <View style={styles.timeInput}>
-              <Text style={styles.label}>End Time</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="10:30"
-                placeholderTextColor="#CCCBD0"
-                value={formData.windowEnd}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, windowEnd: text })
-                }
-              />
-            </View>
-          </View>
-
-          <View style={styles.daysSection}>
-            <Text style={styles.label}>Days of Week</Text>
-            {daysOfWeek.map((day) => (
-              <TouchableOpacity
-                key={day}
-                style={styles.checkboxRow}
-                onPress={() => handleDayToggle(day)}
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    formData.days.includes(day) && styles.checkboxChecked,
-                  ]}
-                >
-                  {formData.days.includes(day) && (
-                    <MaterialIcons name="check" size={16} color="#FFFFFF" />
-                  )}
+              {isSearchingPlaces && (
+                <View style={styles.searchIndicator}>
+                  <MaterialIcons name="search" size={20} color="#777777" />
                 </View>
-                <Text style={styles.checkboxLabel}>{day}</Text>
-              </TouchableOpacity>
-            ))}
+              )}
+              {formData.locationLatitude && formData.locationLongitude && (
+                <View style={styles.coordinatesIndicator}>
+                  <MaterialIcons name="check-circle" size={20} color="#00C851" />
+                </View>
+              )}
+            </View>
+            {formData.locationLatitude && formData.locationLongitude ? (
+              <Text style={[styles.helperText, { color: '#00C851' }]}>
+                ✓ GPS coordinates saved. Students can check in at this location.
+              </Text>
+            ) : (
+              <Text style={styles.helperText}>
+                Search and select a location to enable GPS verification (within 500 feet)
+              </Text>
+            )}
+            
+            {/* Location Suggestions */}
+            {showSuggestions && locationSuggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {locationSuggestions.map((item) => (
+                  <TouchableOpacity
+                    key={item.placeId}
+                    style={styles.suggestionItem}
+                    onPress={() => handleLocationSelect(item)}
+                  >
+                    <MaterialIcons name="place" size={20} color="#175EFC" />
+                    <View style={styles.suggestionTextContainer}>
+                      <Text style={styles.suggestionMainText}>{item.mainText}</Text>
+                      {item.secondaryText && (
+                        <Text style={styles.suggestionSecondaryText}>
+                          {item.secondaryText}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         </View>
 
         {/* Submit Button */}
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>Create Course</Text>
+        <TouchableOpacity 
+          style={[styles.submitButton, isLoading && styles.submitButtonDisabled]} 
+          onPress={handleSubmit}
+          disabled={isLoading}
+        >
+          <Text style={styles.submitButtonText}>
+            {isLoading 
+              ? (isEditMode ? "Updating..." : "Creating...") 
+              : (isEditMode ? "Update Course" : "Create Course")}
+          </Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </View>
   );
 }
@@ -227,17 +341,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardHeaderText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
+    flexGrow: 1
   },
   inputGroup: {
     marginBottom: 16,
@@ -268,40 +372,6 @@ const styles = StyleSheet.create({
     color: '#777777',
     marginTop: 4,
   },
-  timeRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  timeInput: {
-    flex: 1,
-  },
-  daysSection: {
-    marginTop: 8,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#CCCBD0',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  checkboxChecked: {
-    backgroundColor: '#175EFC',
-    borderColor: '#175EFC',
-  },
-  checkboxLabel: {
-    fontSize: 14,
-    color: '#333',
-  },
   submitButton: {
     backgroundColor: '#175EFC',
     paddingVertical: 16,
@@ -313,5 +383,56 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#CCCBD0',
+  },
+  locationInputContainer: {
+    position: 'relative',
+  },
+  searchIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: 10,
+  },
+  coordinatesIndicator: {
+    position: 'absolute',
+    right: 12,
+    top: 10,
+  },
+  suggestionsContainer: {
+    marginTop: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CCCBD0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  suggestionTextContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  suggestionMainText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+  },
+  suggestionSecondaryText: {
+    fontSize: 12,
+    color: '#777777',
+    marginTop: 2,
   },
 });

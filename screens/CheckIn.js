@@ -8,53 +8,114 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { createCheckIn, getCurrentUser } from '../backend/appwrite';
+
+function getDistanceInFeet(lat1, lon1, lat2, lon2) {
+  const toRadians = (deg) => (deg * Math.PI) / 180;
+
+  const R = 6371000; // Earth radius in meters
+  const φ1 = toRadians(lat1);
+  const φ2 = toRadians(lat2);
+  const Δφ = toRadians(lat2 - lat1);
+  const Δλ = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) *
+    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  const distanceMeters = R * c;
+  const distanceFeet = distanceMeters * 3.28084; // convert meters to feet
+
+  return distanceFeet;
+}
 
 export default function CheckIn({ navigation, route }) {
   const { course } = route.params;
   const [isChecking, setIsChecking] = useState(false);
   const [checkInStatus, setCheckInStatus] = useState('idle');
   const [distance, setDistance] = useState(null);
+  const [subscription, setSubscription] = useState(null);
   const [timestamp, setTimestamp] = useState('');
+  const minDistance = 500;
 
-  useEffect(() => {
-    // Simulate GPS check on mount
-    simulateGPSCheck();
-  }, []);
+  // Start location tracking
+  const startLocationTracking = async () => {
+    // Request permissions
+    const { status } = await Location.requestForegroundPermissionsAsync();
 
-  const simulateGPSCheck = () => {
-    // Simulate GPS distance calculation (random between 10-100 feet)
-    const simulatedDistance = Math.floor(Math.random() * 90) + 10;
-    setDistance(simulatedDistance);
+    if (status !== 'granted') {
+      alert('Permission to access location was denied');
+      return;
+    }
+
+    // Set up the location subscription
+    const locationSubscription = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Highest,
+        timeInterval: 2000, // Update every 2 seconds
+        distanceInterval: 5, // Update if moved by 5 meters
+      },
+      (newLocation) => {
+        setDistance(
+          getDistanceInFeet(
+            course.locationLatitude, 
+            course.locationLongitude, 
+            newLocation.coords.latitude,
+            newLocation.coords.longitude
+          )
+        )
+      },
+      
+    );
+
+    setSubscription(locationSubscription);
   };
 
-  const handleCheckIn = () => {
+  // Stop location tracking
+  const stopLocationTracking = () => {
+    subscription?.remove();
+    setSubscription(null);
+  };
+
+  // Start tracking when component mounts
+  useEffect(() => {
+    startLocationTracking();
+
+    // Clean up subscription on unmount
+    return () => {
+      stopLocationTracking();
+    };
+  }, []);
+
+  const handleCheckIn = async () => {
     setIsChecking(true);
     setCheckInStatus('checking');
 
-    // Simulate GPS verification with delay
-    setTimeout(() => {
-      if (distance && distance <= 50) {
-        setCheckInStatus('success');
-        const now = new Date();
-        setTimestamp(
-          now.toLocaleTimeString('en-US', {
-            hour: 'numeric',
-            minute: '2-digit',
-          })
-        );
-        setIsChecking(false);
+    try {
+      const student = await getCurrentUser();
+      await createCheckIn(course.activeSession, student.$id);
 
-        // Auto close after 3 seconds and pass back success
-        setTimeout(() => {
-          navigation.navigate('StudentDashboard', {
-            checkedInCourseId: course.id,
-          });
-        }, 3000);
-      } else {
-        setCheckInStatus('failed');
-        setIsChecking(false);
-      }
-    }, 2000);
+      setCheckInStatus('success');
+      const now = new Date();
+      setTimestamp(
+        now.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+      );
+
+    } catch (error) {
+      console.error(error);
+      setCheckInStatus('failed');
+
+    } finally {
+      setIsChecking(false);
+    }
+
   };
 
   const getStatusIcon = () => {
@@ -132,15 +193,15 @@ export default function CheckIn({ navigation, route }) {
                     style={[
                       styles.distanceText,
                       {
-                        color: distance <= 50 ? '#00C851' : '#FA2C37',
+                        color: distance <= minDistance ? '#00C851' : '#FA2C37',
                       },
                     ]}
                   >
-                    ~{distance} feet
+                    ~{Math.round(distance)} feet
                   </Text>
                 </View>
 
-                {distance <= 50 ? (
+                {distance <= minDistance ? (
                   <View style={[styles.alert, styles.alertSuccess]}>
                     <MaterialIcons name="check-circle" size={16} color="#00C851" />
                     <Text style={styles.alertTextSuccess}>
@@ -151,7 +212,7 @@ export default function CheckIn({ navigation, route }) {
                   <View style={[styles.alert, styles.alertError]}>
                     <MaterialIcons name="error" size={16} color="#FA2C37" />
                     <Text style={styles.alertTextError}>
-                      You must be within 50 feet of the classroom
+                      {`You must be within ${minDistance} feet of the classroom`}
                     </Text>
                   </View>
                 )}
@@ -213,10 +274,10 @@ export default function CheckIn({ navigation, route }) {
           <TouchableOpacity
             style={[
               styles.checkInButton,
-              (distance === null || distance > 50) && styles.checkInButtonDisabled,
+              (distance === null || distance > minDistance) && styles.checkInButtonDisabled,
             ]}
             onPress={handleCheckIn}
-            disabled={distance === null || distance > 50}
+            disabled={distance === null || distance > minDistance}
           >
             <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
             <Text style={styles.checkInButtonText}>Check In Now</Text>
@@ -233,9 +294,7 @@ export default function CheckIn({ navigation, route }) {
         <View style={styles.infoBox}>
           <Text style={styles.infoText}>
             <Text style={styles.infoTextBold}>How it works: </Text>
-            Your device's GPS location is verified to ensure you are physically
-            present within 50 feet of the classroom. This prevents fraudulent
-            check-ins.
+            {`Your device's GPS location is verified to ensure you are physically present within ${minDistance} feet of the classroom. This prevents fraudulent check-ins.`}
           </Text>
         </View>
       </ScrollView>

@@ -1,4 +1,3 @@
-import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HomePage from './screens/HomePage';
@@ -10,20 +9,10 @@ import StudentStats from './screens/StudentStats';
 import ProfDashboard from './screens/ProfDashboard';
 import CreateCourse from './screens/CreateCourse';
 import ProfCourseInfo from './screens/ProfCourseInfo';
-import testFunction from './backend/appwrite';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
-  useEffect(() => {
-    (async () => {
-      try {
-        await testFunction();
-      } catch (err) {
-        console.log("Error in testFunction:", err);
-      }
-    })();
-  }, []);
   return (
     <NavigationContainer>
       <Stack.Navigator 

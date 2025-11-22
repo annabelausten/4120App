@@ -7,87 +7,113 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { getProfessorCourses, getActiveAttendanceSession, logOut } from '../backend/appwrite';
 
 export default function ProfDashboard({ navigation, route }) {
-  const [courses, setCourses] = useState([
-    {
-      id: '1',
-      name: 'Introduction to Computer Science',
-      code: 'CS 101',
-      schedule: 'MWF 10:15 - 11:05 AM',
-      location: 'Engineering Hall, Room 201',
-      enrolledStudents: 45,
-      attendanceWindow: {
-        start: '10:15',
-        end: '10:30',
-        days: ['Monday', 'Wednesday', 'Friday'],
-      },
-      isActive: false,
-    },
-    {
-      id: '2',
-      name: 'Data Structures',
-      code: 'CS 225',
-      schedule: 'TTh 2:00 - 3:15 PM',
-      location: 'Siebel Center, Room 1404',
-      enrolledStudents: 38,
-      attendanceWindow: {
-        start: '14:00',
-        end: '14:15',
-        days: ['Tuesday', 'Thursday'],
-      },
-      isActive: false,
-    },
-    {
-      id: '3',
-      name: 'Web Development',
-      code: 'CS 408',
-      schedule: 'MW 1:00 - 2:15 PM',
-      location: 'Digital Computer Lab, Room 120',
-      enrolledStudents: 32,
-      attendanceWindow: {
-        start: '13:00',
-        end: '13:15',
-        days: ['Monday', 'Wednesday'],
-      },
-      isActive: false,
-    },
-  ]);
+  const [courses, setCourses] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const professorId = route.params?.professorId;
 
-  // Handle new course creation
+  // Fetch courses from database on load
   useEffect(() => {
-    if (route.params?.newCourse) {
-      const courseWithId = {
-        ...route.params.newCourse,
-        id: Date.now().toString(),
-        enrolledStudents: 0,
+    const fetchCourses = async () => {
+      if (!professorId) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const fetchedCourses = await getProfessorCourses(professorId);
+        
+        // Check which courses have active attendance sessions
+        const coursesWithActiveStatus = await Promise.all(
+          fetchedCourses.map(async (course) => {
+            const activeSession = await getActiveAttendanceSession(course.$id);
+            return {
+              ...course,
+              isActive: activeSession !== null, // Set isActive based on database state
+            };
+          })
+        );
+        
+        setCourses(coursesWithActiveStatus);
+      } catch (error) {
+        console.error("Error fetching professor courses:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, [professorId]);
+
+  // Refresh courses when returning from CreateCourse or ProfCourseInfo
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Refresh courses when screen comes into focus
+      if (professorId) {
+        const refreshCourses = async () => {
+          try {
+            const fetchedCourses = await getProfessorCourses(professorId);
+            
+            // Check which courses have active attendance sessions
+            const coursesWithActiveStatus = await Promise.all(
+              fetchedCourses.map(async (course) => {
+                const activeSession = await getActiveAttendanceSession(course.$id);
+                return {
+                  ...course,
+                  isActive: activeSession !== null, // Set isActive based on database state
+                };
+              })
+            );
+            
+            setCourses(coursesWithActiveStatus);
+          } catch (error) {
+            console.error("Error refreshing professor courses:", error);
+          }
+        };
+        refreshCourses();
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, professorId]);
+
+  // Handle course refresh from ProfCourseInfo (after start/stop attendance)
+  useEffect(() => {
+    if (route.params?.refreshCourseId) {
+      const courseId = route.params.refreshCourseId;
+      
+      // Refresh the specific course's active status from database
+      const refreshCourse = async () => {
+        try {
+          const activeSession = await getActiveAttendanceSession(courseId);
+          setCourses(prevCourses =>
+            prevCourses.map(course =>
+              course.id === courseId || course.$id === courseId
+                ? { ...course, isActive: activeSession !== null }
+                : course
+            )
+          );
+        } catch (error) {
+          console.error("Error refreshing course:", error);
+        }
       };
-      setCourses([...courses, courseWithId]);
+      
+      refreshCourse();
       // Clear the parameter
-      navigation.setParams({ newCourse: undefined });
+      navigation.setParams({ refreshCourseId: undefined });
     }
-  }, [route.params?.newCourse]);
+  }, [route.params?.refreshCourseId]);
 
-  // Handle attendance toggle from ProfCourseInfo
-  useEffect(() => {
-    if (route.params?.toggleCourseId) {
-      const courseId = route.params.toggleCourseId;
-      setCourses(courses.map(course =>
-        course.id === courseId
-          ? { ...course, isActive: !course.isActive }
-          : course
-      ));
-      // Clear the parameter
-      navigation.setParams({ toggleCourseId: undefined });
-    }
-  }, [route.params?.toggleCourseId]);
-
-  const handleLogout = () => {
-    navigation.navigate('Home');
+  const handleLogout = async () => {
+    await logOut();
+    navigation.replace('Home');
   };
 
   const handleCreateCourse = () => {
-    navigation.navigate('CreateCourse');
+    navigation.navigate('CreateCourse', { professorId });
   };
 
   const handleCoursePress = (course) => {
@@ -122,7 +148,12 @@ export default function ProfDashboard({ navigation, route }) {
         style={styles.scrollView}
         contentContainerStyle={styles.coursesList}
       >
-        {courses.length === 0 ? (
+        {isLoading ? (
+          <View style={styles.emptyState}>
+            <MaterialIcons name="event" size={48} color="#CCCBD0" />
+            <Text style={styles.emptyStateTitle}>Loading courses...</Text>
+          </View>
+        ) : courses.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialIcons name="event" size={48} color="#CCCBD0" />
             <Text style={styles.emptyStateTitle}>No courses yet</Text>
@@ -133,7 +164,7 @@ export default function ProfDashboard({ navigation, route }) {
         ) : (
           courses.map((course) => (
             <TouchableOpacity
-              key={course.id}
+              key={course.id || course.$id}
               style={styles.courseCard}
               onPress={() => handleCoursePress(course)}
               activeOpacity={0.7}
@@ -158,7 +189,7 @@ export default function ProfDashboard({ navigation, route }) {
                 <View style={styles.detailRow}>
                   <FontAwesome5 name="users" size={14} color="#777777" />
                   <Text style={styles.detailText}>
-                    {course.enrolledStudents} students enrolled
+                    {course.enrolledStudents || 0} students enrolled
                   </Text>
                 </View>
               </View>

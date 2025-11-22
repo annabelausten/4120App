@@ -8,59 +8,53 @@ import {
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
+import { getCurrentUser, getStudentCourseList, logOut, subscribeToCourse } from '../backend/appwrite';
 
 export default function StudentDashboard({ navigation, route }) {
-  // Initial course data without dynamic fields
-  const initialCourses = [
-    {
-      id: '1',
-      name: 'Introduction to Computer Science',
-      code: 'CS 101',
-      schedule: 'MWF 10:15 - 11:05 AM',
-      location: 'Engineering Hall, Room 201',
-      attended: 19,
-      totalClasses: 20,
-      attendanceRate: 95,
-    },
-    {
-      id: '2',
-      name: 'Data Structures',
-      code: 'CS 225',
-      schedule: 'TTh 2:00 - 3:15 PM',
-      location: 'Siebel Center, Room 1404',
-      attended: 17,
-      totalClasses: 20,
-      attendanceRate: 85,
-    },
-    {
-      id: '3',
-      name: 'Web Development',
-      code: 'CS 408',
-      schedule: 'MW 1:00 - 2:15 PM',
-      location: 'Digital Computer Lab, Room 120',
-      attended: 18,
-      totalClasses: 20,
-      attendanceRate: 90,
-    },
-  ];
+  const [courses, setCourses] = useState([]);
 
-  // Initialize with dynamic schedules applied
-  const [courses, setCourses] = useState(updateAllCoursesSchedules(initialCourses));
-
-  // Update course schedules on mount and every minute
+  // Fetch student's courses on load
   useEffect(() => {
-    const updateSchedules = () => {
-      setCourses(prevCourses => updateAllCoursesSchedules(prevCourses));
-    };
-    
-    // Update immediately
-    updateSchedules();
-    
-    // Update every minute to keep schedules accurate
-    const interval = setInterval(updateSchedules, 60000);
-    
-    return () => clearInterval(interval);
+    const fetchCourses = async () => {
+      try {
+        const student = await getCurrentUser();
+        const result = await getStudentCourseList(student.$id);
+        console.log("Fetched student courses:", result);
+        setCourses(updateAllCoursesSchedules(result));
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    fetchCourses();
   }, []);
+
+  // Update course schedules on mount, subscribe to active sessions
+  useEffect(() => {
+    // 1. Update schedules immediately
+    setCourses(prev => updateAllCoursesSchedules(prev));
+
+    // 2. Create one realtime listener per course
+    const unsubscribes = courses.map(course => {
+      return subscribeToCourse(course.$id)((update) => {
+        setCourses(prevCourses => {
+          return prevCourses.map(c => {
+            if (c.$id !== course.$id) return c;
+
+            return {
+              ...c,
+              activeSession: update.session,
+              hasActiveAttendance: update.isActive,
+            };
+          });
+        });
+      });
+    });
+
+    // 3. Cleanup on unmount
+    return () => {
+      unsubscribes.forEach(unsub => unsub && unsub());
+    };
+  }, [courses.length]);
 
   // Handle new course enrollment
   useEffect(() => {
@@ -96,8 +90,9 @@ export default function StudentDashboard({ navigation, route }) {
     return '#FA2C37';
   };
 
-  const handleLogout = () => {
-    navigation.navigate('Home');
+  const handleLogout = async () => {
+    await logOut();
+    navigation.replace('Home');
   };
 
   return (
@@ -116,7 +111,7 @@ export default function StudentDashboard({ navigation, route }) {
 
         <TouchableOpacity 
           style={styles.enrollButton}
-          onPress={() => navigation.navigate('EnrollInCourse')}
+          onPress={() => navigation.navigate('EnrollInCourse', { courses })}
         >
           <MaterialIcons name="add" size={20} color="#175EFC" />
           <Text style={styles.enrollButtonText}>Enroll in Course</Text>
@@ -126,7 +121,7 @@ export default function StudentDashboard({ navigation, route }) {
       {/* Courses List */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
         {courses.map((course) => (
-          <View key={course.id} style={styles.courseCard}>
+          <View key={course.$id} style={styles.courseCard}>
             {/* Course Header */}
             <View style={styles.courseHeader}>
               <View style={styles.courseInfo}>
@@ -146,9 +141,6 @@ export default function StudentDashboard({ navigation, route }) {
                 <MaterialIcons name="event" size={16} color="#777777" />
                 <Text style={styles.scheduleText}>{course.schedule}</Text>
               </View>
-              {course.nextClass && (
-                <Text style={styles.nextClassText}>Next: {course.nextClass}</Text>
-              )}
             </View>
 
             {/* Attendance Progress */}
@@ -255,6 +247,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   coursesList: {
+    flex: 1,
     padding: 20,
     paddingTop: 16,
   },

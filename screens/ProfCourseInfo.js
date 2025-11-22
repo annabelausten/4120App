@@ -5,38 +5,236 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Alert,
 } from 'react-native';
-import { MaterialIcons, Entypo } from '@expo/vector-icons';
+import { MaterialIcons, Entypo, MaterialCommunityIcons } from '@expo/vector-icons';
+import { getCourseStudents, getActiveAttendanceSession, getSessionCheckIns, startAttendanceSession, stopAttendanceSession, subscribeToCheckIns, updateCourse, deleteCourse } from '../backend/appwrite';
 
 export default function ProfCourseInfo({ navigation, route }) {
   const { course, onToggleAttendance } = route.params;
+  const courseId = course.$id || course.id;
 
   const [activeTab, setActiveTab] = useState('realtime'); // 'realtime' or 'trends'
-  const [students, setStudents] = useState([
-    { id: '1', name: 'Emma Johnson', checkedIn: true, timestamp: '10:16 AM', attendanceRate: 95, totalClasses: 20, attended: 19 },
-    { id: '2', name: 'Liam Smith', checkedIn: true, timestamp: '10:17 AM', attendanceRate: 88, totalClasses: 20, attended: 18 },
-    { id: '3', name: 'Olivia Williams', checkedIn: false, attendanceRate: 92, totalClasses: 20, attended: 18 },
-    { id: '4', name: 'Noah Brown', checkedIn: true, timestamp: '10:15 AM', attendanceRate: 100, totalClasses: 20, attended: 20 },
-    { id: '5', name: 'Ava Davis', checkedIn: false, attendanceRate: 75, totalClasses: 20, attended: 15 },
-    { id: '6', name: 'Ethan Martinez', checkedIn: true, timestamp: '10:18 AM', attendanceRate: 85, totalClasses: 20, attended: 17 },
-    { id: '7', name: 'Sophia Garcia', checkedIn: true, timestamp: '10:16 AM', attendanceRate: 90, totalClasses: 20, attended: 18 },
-    { id: '8', name: 'Mason Rodriguez', checkedIn: false, attendanceRate: 70, totalClasses: 20, attended: 14 },
-  ]);
+  const [students, setStudents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeSession, setActiveSession] = useState(null);
+  const [checkIns, setCheckIns] = useState([]);
+  const [isToggling, setIsToggling] = useState(false);
+  const [toggleAction, setToggleAction] = useState(null); // 'start' or 'stop'
+
+  // Function to refresh all data on the current screen
+  const refreshScreenData = async () => {
+    try {
+      // Fetch enrolled students with attendance stats
+      const studentsData = await getCourseStudents(courseId);
+      setStudents(studentsData);
+
+      // Fetch active attendance session and check-ins for real-time tab
+      const session = await getActiveAttendanceSession(courseId);
+      setActiveSession(session);
+
+      if (session) {
+        const sessionCheckIns = await getSessionCheckIns(session.$id);
+        setCheckIns(sessionCheckIns);
+
+        // Update students with real-time check-in status
+        const studentsWithCheckIn = studentsData.map(student => {
+          const checkIn = sessionCheckIns.find(ci => ci.studentId === student.id);
+          if (checkIn) {
+            // Format timestamp
+            const date = new Date(checkIn.timestamp);
+            const timestamp = date.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit',
+              hour12: true 
+            });
+            return {
+              ...student,
+              checkedIn: true,
+              timestamp,
+            };
+          }
+          return {
+            ...student,
+            checkedIn: false,
+            timestamp: null,
+          };
+        });
+        setStudents(studentsWithCheckIn);
+      }
+    } catch (error) {
+      console.error("Error refreshing screen data:", error);
+    }
+  };
+
+  // Fetch students and attendance data on load
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!courseId) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        await refreshScreenData();
+      } catch (error) {
+        console.error("Error fetching course data:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+
+    // Refresh data when screen comes into focus
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchData();
+    });
+
+    return unsubscribe;
+  }, [courseId, navigation]);
+
+  // Set up real-time subscription for check-ins when attendance is active
+  useEffect(() => {
+    // Only subscribe when there's an active attendance session
+    if (!activeSession || !activeSession.$id) {
+      // Clear check-ins and reset student check-in status when no active session
+      setCheckIns([]);
+      setStudents(prevStudents => 
+        prevStudents.map(student => ({
+          ...student,
+          checkedIn: false,
+          timestamp: null,
+        }))
+      );
+      return; // Don't subscribe if no active session
+    }
+
+    // Set up real-time subscription for check-ins
+    const subscribeToCheckInsFn = subscribeToCheckIns(activeSession.$id);
+    const unsubscribe = subscribeToCheckInsFn(async (newCheckIns) => {
+      // Update check-ins state
+      setCheckIns(newCheckIns);
+
+      // Refresh students data to update check-in status
+      try {
+        const studentsData = await getCourseStudents(courseId);
+        
+        // Update students with real-time check-in status
+        const studentsWithCheckIn = studentsData.map(student => {
+          const checkIn = newCheckIns.find(ci => ci.studentId === student.id);
+          if (checkIn) {
+            // Format timestamp
+            const date = new Date(checkIn.timestamp);
+            const timestamp = date.toLocaleTimeString('en-US', { 
+              hour: 'numeric', 
+              minute: '2-digit',
+              hour12: true 
+            });
+            return {
+              ...student,
+              checkedIn: true,
+              timestamp,
+            };
+          }
+          return {
+            ...student,
+            checkedIn: false,
+            timestamp: null,
+          };
+        });
+        setStudents(studentsWithCheckIn);
+      } catch (error) {
+        console.error("Error updating students with check-in data:", error);
+      }
+    });
+
+    // Cleanup subscription when component unmounts or session changes
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [activeSession?.$id, courseId]); // Re-run when active session changes
 
   const checkedInCount = students.filter((s) => s.checkedIn).length;
-  const attendancePercentage = (checkedInCount / course.enrolledStudents) * 100;
+  const enrolledCount = students.length || course.enrolledStudents || 0;
+  const attendancePercentage = enrolledCount > 0 
+    ? (checkedInCount / enrolledCount) * 100 
+    : 0;
 
-  const handleToggleAttendance = () => {
-    // Toggle and navigate back with updated status
-    navigation.navigate('ProfDashboard', {
-      toggleCourseId: course.id,
-    });
+  // Determine if attendance is active based on database state
+  const isAttendanceActive = activeSession !== null;
+
+  const handleToggleAttendance = async () => {
+    if (isToggling) return; // Prevent double clicks
+
+    // Determine the action before starting the toggle
+    const action = isAttendanceActive ? 'stop' : 'start';
+    setToggleAction(action);
+    setIsToggling(true);
+    
+    try {
+      if (isAttendanceActive) {
+        // Stop attendance session
+        await stopAttendanceSession(courseId);
+        Alert.alert("Success", "Attendance session stopped.");
+      } else {
+        // Start attendance session (no popup notification)
+        await startAttendanceSession(courseId);
+      }
+
+      // Refresh data on the current screen without navigating away
+      await refreshScreenData();
+    } catch (error) {
+      console.error("Error toggling attendance:", error);
+      Alert.alert("Error", error.message || "Failed to toggle attendance. Please try again.");
+    } finally {
+      setIsToggling(false);
+      setToggleAction(null);
+    }
   };
 
   const getAttendanceColor = (rate) => {
     if (rate >= 90) return '#00C851';
     if (rate >= 75) return '#EFB100';
     return '#FA2C37';
+  };
+
+  const handleEditCourse = () => {
+    navigation.navigate('CreateCourse', { 
+      professorId: course.professorId,
+      course: course, // Pass course for edit mode
+      isEditMode: true 
+    });
+  };
+
+  const handleDeleteCourse = () => {
+    Alert.alert(
+      "Delete Course",
+      "Are you sure you want to delete this course? This will permanently delete the course, all attendance sessions, check-ins, and student enrollments. This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel"
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteCourse(courseId);
+              Alert.alert("Success", "Course deleted successfully.");
+              navigation.goBack();
+            } catch (error) {
+              console.error("Error deleting course:", error);
+              Alert.alert("Error", error.message || "Failed to delete course. Please try again.");
+            }
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -70,11 +268,19 @@ export default function ProfCourseInfo({ navigation, route }) {
         <TouchableOpacity
           style={[
             styles.toggleButton,
-            course.isActive ? styles.stopButton : styles.startButton,
+            isAttendanceActive ? styles.stopButton : styles.startButton,
           ]}
           onPress={handleToggleAttendance}
+          disabled={isToggling}
         >
-          {course.isActive ? (
+          {isToggling ? (
+            <>
+              <MaterialIcons name="hourglass-empty" size={20} color={toggleAction === 'stop' ? "#FFFFFF" : "#175EFC"} />
+              <Text style={[styles.toggleButtonText, { color: toggleAction === 'stop' ? "#FFFFFF" : "#175EFC" }]}>
+                {toggleAction === 'stop' ? "Stopping..." : "Starting..."}
+              </Text>
+            </>
+          ) : isAttendanceActive ? (
             <>
               <MaterialIcons name="stop" size={20} color="#FFFFFF" />
               <Text style={styles.toggleButtonText}>Stop Attendance</Text>
@@ -88,6 +294,24 @@ export default function ProfCourseInfo({ navigation, route }) {
             </>
           )}
         </TouchableOpacity>
+
+        {/* Edit and Delete Buttons */}
+        <View style={styles.actionButtonsRow}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={handleEditCourse}
+          >
+            <MaterialIcons name="edit" size={18} color="#175EFC" />
+            <Text style={styles.editButtonText}>Edit Course</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={handleDeleteCourse}
+          >
+            <MaterialIcons name="delete" size={18} color="#FA2C37" />
+            <Text style={styles.deleteButtonText}>Delete Course</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tabs */}
@@ -122,99 +346,124 @@ export default function ProfCourseInfo({ navigation, route }) {
 
       {/* Content */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {activeTab === 'realtime' ? (
-          <>
-            {/* Stats Card */}
-            <View style={styles.statsCard}>
-              <View style={styles.statsRow}>
-                <View>
-                  <Text style={styles.statsLabel}>Checked In</Text>
-                  <Text style={styles.statsValue}>
-                    {checkedInCount} / {course.enrolledStudents}
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>Loading student data...</Text>
+          </View>
+        ) : activeTab === 'realtime' ? (
+          isAttendanceActive ? (
+            <>
+              {/* Stats Card */}
+              <View style={styles.statsCard}>
+                <View style={styles.statsRow}>
+                  <View>
+                    <Text style={styles.statsLabel}>Checked In</Text>
+                    <Text style={styles.statsValue}>
+                      {checkedInCount} / {enrolledCount}
+                    </Text>
+                  </View>
+                  <Text style={styles.statsPercentage}>
+                    {attendancePercentage.toFixed(0)}%
                   </Text>
                 </View>
-                <Text style={styles.statsPercentage}>
-                  {attendancePercentage.toFixed(0)}%
-                </Text>
-              </View>
-              <View style={styles.progressBarContainer}>
-                <View
-                  style={[
-                    styles.progressBar,
-                    { width: `${attendancePercentage}%` },
-                  ]}
-                />
-              </View>
-            </View>
-
-            {/* Students List */}
-            <Text style={styles.sectionTitle}>Students</Text>
-            {students.map((student) => (
-              <View key={student.id} style={styles.studentCard}>
-                <View style={styles.studentInfo}>
-                  <Text style={styles.studentName}>{student.name}</Text>
-                  {student.timestamp && (
-                    <Text style={styles.studentTimestamp}>
-                      Checked in at {student.timestamp}
-                    </Text>
-                  )}
+                <View style={styles.progressBarContainer}>
+                  <View
+                    style={[
+                      styles.progressBar,
+                      { width: `${attendancePercentage}%` },
+                    ]}
+                  />
                 </View>
-                {student.checkedIn ? (
-                  <View style={styles.presentBadge}>
-                    <Text style={styles.presentBadgeText}>Present</Text>
-                  </View>
-                ) : (
-                  <View style={styles.absentBadge}>
-                    <Text style={styles.absentBadgeText}>Absent</Text>
-                  </View>
-                )}
               </View>
-            ))}
-          </>
+
+              {/* Students List */}
+              <Text style={styles.sectionTitle}>Students</Text>
+              {students.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyStateText}>No students enrolled in this course yet.</Text>
+                </View>
+              ) : (
+                students.map((student) => (
+                  <View key={student.id} style={styles.studentCard}>
+                    <View style={styles.studentInfo}>
+                      <Text style={styles.studentName}>{student.name}</Text>
+                      {student.timestamp && (
+                        <Text style={styles.studentTimestamp}>
+                          Checked in at {student.timestamp}
+                        </Text>
+                      )}
+                    </View>
+                    {student.checkedIn ? (
+                      <View style={styles.presentBadge}>
+                        <Text style={styles.presentBadgeText}>Present</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.absentBadge}>
+                        <Text style={styles.absentBadgeText}>Absent</Text>
+                      </View>
+                    )}
+                  </View>
+                ))
+              )}
+            </>
+          ) : (
+            <View style={{flex: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginBottom: 40}}>
+              <MaterialCommunityIcons name="table-cancel" size={100} color="gray" />
+              <Text style={styles.notActiveAttendance}>Session Not Active</Text>
+            </View>
+          )
         ) : (
           <>
             {/* Trends Header */}
             <View style={styles.trendsHeader}>
               <Entypo name="bar-graph" size={16} color="#777777" />
               <Text style={styles.trendsHeaderText}>
-                Semester Overview - 20 Classes
+                Semester Overview - {students.length > 0 && students[0].totalClasses > 0 
+                  ? `${students[0].totalClasses} Classes` 
+                  : 'No classes yet'}
               </Text>
             </View>
 
             {/* Student Trends List */}
-            {students
-              .sort((a, b) => b.attendanceRate - a.attendanceRate)
-              .map((student) => (
-                <View key={student.id} style={styles.trendCard}>
-                  <View style={styles.trendHeader}>
-                    <View>
-                      <Text style={styles.studentName}>{student.name}</Text>
-                      <Text style={styles.trendSubtext}>
-                        {student.attended} / {student.totalClasses} classes
+            {students.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>No students enrolled in this course yet.</Text>
+              </View>
+            ) : (
+              students
+                .sort((a, b) => b.attendanceRate - a.attendanceRate)
+                .map((student) => (
+                  <View key={student.id} style={styles.trendCard}>
+                    <View style={styles.trendHeader}>
+                      <View>
+                        <Text style={styles.studentName}>{student.name}</Text>
+                        <Text style={styles.trendSubtext}>
+                          {student.attended} / {student.totalClasses} classes
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.trendRate,
+                          { color: getAttendanceColor(student.attendanceRate) },
+                        ]}
+                      >
+                        {student.attendanceRate}%
                       </Text>
                     </View>
-                    <Text
-                      style={[
-                        styles.trendRate,
-                        { color: getAttendanceColor(student.attendanceRate) },
-                      ]}
-                    >
-                      {student.attendanceRate}%
-                    </Text>
+                    <View style={styles.progressBarContainer}>
+                      <View
+                        style={[
+                          styles.progressBar,
+                          {
+                            width: `${student.attendanceRate}%`,
+                            backgroundColor: getAttendanceColor(student.attendanceRate),
+                          },
+                        ]}
+                      />
+                    </View>
                   </View>
-                  <View style={styles.progressBarContainer}>
-                    <View
-                      style={[
-                        styles.progressBar,
-                        {
-                          width: `${student.attendanceRate}%`,
-                          backgroundColor: getAttendanceColor(student.attendanceRate),
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              ))}
+                ))
+            )}
           </>
         )}
       </ScrollView>
@@ -254,6 +503,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#DBFCE5',
     marginTop: 4,
+  },
+  notActiveAttendance: {
+    fontSize: 18,
+    textAlign: 'center',
+    fontWeight: 700,
+    color: 'gray',
+    marginTop: 20
   },
   courseDetails: {
     marginBottom: 16,
@@ -315,6 +571,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    flex: 1,
     padding: 20,
   },
   statsCard: {
@@ -452,5 +709,62 @@ const styles = StyleSheet.create({
   trendRate: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#777777',
+  },
+  emptyState: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: '#777777',
+    textAlign: 'center',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  editButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#175EFC',
+  },
+  editButtonText: {
+    color: '#175EFC',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  deleteButton: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  deleteButtonText: {
+    color: '#FA2C37',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 6,
   },
 });

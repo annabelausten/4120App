@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,61 +6,32 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import { updateCourseSchedule } from '../utils/courseUtils';
+import { enrollStudentInCourse, getAllCourses, getCurrentUser } from '../backend/appwrite';
 
 export default function EnrollInCourse({ navigation, route }) {
+  const { courses } = route.params;
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // Mock available courses
-  const availableCourses = [
-    {
-      id: '4',
-      name: 'Machine Learning',
-      code: 'CS 440',
-      schedule: 'TTh 9:30 - 10:45 AM',
-      location: 'Thomas M. Siebel Center, Room 1404',
-      professor: 'Dr. Sarah Chen',
-      enrolledStudents: 42,
-    },
-    {
-      id: '5',
-      name: 'Database Systems',
-      code: 'CS 411',
-      schedule: 'MWF 11:00 AM - 12:00 PM',
-      location: 'Siebel Center, Room 1302',
-      professor: 'Dr. Michael Johnson',
-      enrolledStudents: 35,
-    },
-    {
-      id: '6',
-      name: 'Computer Networks',
-      code: 'CS 438',
-      schedule: 'TTh 3:30 - 4:45 PM',
-      location: 'Engineering Hall, Room 106B',
-      professor: 'Dr. Emily Rodriguez',
-      enrolledStudents: 28,
-    },
-    {
-      id: '7',
-      name: 'Software Engineering',
-      code: 'CS 427',
-      schedule: 'MW 2:00 - 3:15 PM',
-      location: 'Siebel Center, Room 0216',
-      professor: 'Dr. James Park',
-      enrolledStudents: 50,
-    },
-    {
-      id: '8',
-      name: 'Algorithms',
-      code: 'CS 374',
-      schedule: 'MWF 1:00 - 2:00 PM',
-      location: 'Foellinger Auditorium',
-      professor: 'Dr. Lisa Anderson',
-      enrolledStudents: 120,
-    },
-  ];
+  const [availableCourses, setAvailableCourses] = useState([]);
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    const fetchCourses = async () => {
+      try {
+        setIsLoading(true);
+        const courses = await getAllCourses();
+        setAvailableCourses(courses);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, [])
 
   const filteredCourses = availableCourses.filter(
     (course) =>
@@ -69,11 +40,20 @@ export default function EnrollInCourse({ navigation, route }) {
       course.professor.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleEnroll = (course) => {
+  const handleEnroll = async (course) => {
+    // Enroll the student in backend
+    try {
+      const user = await getCurrentUser()
+      const result = await enrollStudentInCourse(user.$id, course.$id)
+      console.log("Successfully enrolled student in course: ", result)
+    } catch (error) {
+      console.error(error)
+    }
+
     // Navigate back and pass the enrolled course data
     navigation.navigate('StudentDashboard', {
       newCourse: {
-        id: course.id,
+        $id: course.$id,
         name: course.name,
         code: course.code,
         schedule: course.schedule,
@@ -125,56 +105,70 @@ export default function EnrollInCourse({ navigation, route }) {
       </View>
 
       {/* Course List */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
-        {filteredCourses.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="search" size={48} color="#CCCBD0" />
-            <Text style={styles.emptyStateTitle}>No courses found</Text>
-            <Text style={styles.emptyStateSubtitle}>Try a different search term</Text>
-          </View>
-        ) : (
-          filteredCourses.map((course) => (
-            <View key={course.id} style={styles.courseCard}>
-              <View style={styles.courseHeader}>
-                <View style={styles.courseInfo}>
-                  <Text style={styles.courseCode}>{course.code}</Text>
-                  <Text style={styles.courseName}>{course.name}</Text>
-                </View>
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>Available</Text>
-                </View>
-              </View>
-
-              <View style={styles.courseDetails}>
-                <Text style={styles.detailText}>
-                  <Text style={styles.detailLabel}>Professor: </Text>
-                  {course.professor}
-                </Text>
-                <Text style={styles.detailText}>
-                  <Text style={styles.detailLabel}>Schedule: </Text>
-                  {course.schedule}
-                </Text>
-                <Text style={styles.detailText}>
-                  <Text style={styles.detailLabel}>Location: </Text>
-                  {course.location}
-                </Text>
-                <Text style={styles.detailText}>
-                  <Text style={styles.detailLabel}>Enrolled: </Text>
-                  {course.enrolledStudents} students
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.enrollButton}
-                onPress={() => handleEnroll(course)}
-              >
-                <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
-                <Text style={styles.enrollButtonText}>Enroll in Course</Text>
-              </TouchableOpacity>
+      {isLoading ? (
+        <View style={{flexDirection: 'column', flex: 1, alignItems: 'center', justifyContent: 'center'}}>
+          <ActivityIndicator color='gray' size='large' />
+          <Text style={{color: 'gray', fontSize: 15, fontWeight: 600, marginTop: 14}}>Loading Courses</Text>
+        </View>
+      ) : (
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
+          {filteredCourses.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialIcons name="search" size={48} color="#CCCBD0" />
+              <Text style={styles.emptyStateTitle}>No courses found</Text>
+              <Text style={styles.emptyStateSubtitle}>Try a different search term</Text>
             </View>
-          ))
-        )}
-      </ScrollView>
+          ) : (
+            filteredCourses.map((course) => (
+              <View key={course.$id} style={styles.courseCard}>
+                <View style={styles.courseHeader}>
+                  <View style={styles.courseInfo}>
+                    <Text style={styles.courseCode}>{course.code}</Text>
+                    <Text style={styles.courseName}>{course.name}</Text>
+                  </View>
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>Available</Text>
+                  </View>
+                </View>
+
+                <View style={styles.courseDetails}>
+                  <Text style={styles.detailText}>
+                    <Text style={styles.detailLabel}>Professor: </Text>
+                    {course.professor}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    <Text style={styles.detailLabel}>Schedule: </Text>
+                    {course.schedule}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    <Text style={styles.detailLabel}>Location: </Text>
+                    {course.location}
+                  </Text>
+                  <Text style={styles.detailText}>
+                    <Text style={styles.detailLabel}>Enrolled: </Text>
+                    {course.enrolledStudents} students
+                  </Text>
+                </View>
+
+                {courses?.some(obj => obj.$id === course.$id) ? (
+                  <View style={styles.disabledButton}>
+                    <Text style={styles.disabledButtonText}>Already Enrolled in Course</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.enrollButton}
+                    onPress={() => handleEnroll(course)}
+                  >
+                    <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
+                    <Text style={styles.enrollButtonText}>Enroll in Course</Text>
+                  </TouchableOpacity>
+                )}
+                
+              </View>
+            ))
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -232,6 +226,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   coursesList: {
+    flex: 1,
     padding: 20,
   },
   emptyState: {
@@ -321,5 +316,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  disabledButton: {
+    backgroundColor: '#F0F0F0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  disabledButtonText: {
+    color: '#CCCBD0',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
