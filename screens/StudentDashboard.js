@@ -1,32 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 import { updateAllCoursesSchedules } from '../utils/courseUtils';
 import { getCurrentUser, getStudentCourseList, logOut, subscribeToCourse } from '../backend/appwrite';
+import { useFocusEffect } from '@react-navigation/native';
 
 export default function StudentDashboard({ navigation, route }) {
   const [courses, setCourses] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // Fetch student's courses on load
-  useEffect(() => {
-    const fetchCourses = async () => {
-      try {
-        const student = await getCurrentUser();
-        const result = await getStudentCourseList(student.$id);
-        console.log("Fetched student courses:", result);
-        setCourses(updateAllCoursesSchedules(result));
-      } catch (error) {
-        console.error(error);
-      }
-    }
-    fetchCourses();
-  }, []);
+  // Fetch student's courses on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      const fetchCourses = async () => {
+        try {
+          setIsLoading(true);
+          const student = await getCurrentUser();
+          const result = await getStudentCourseList(student.$id);
+          console.log("Fetched student courses:", result);
+          setCourses(updateAllCoursesSchedules(result));
+        } catch (error) {
+          console.error(error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      fetchCourses();
+    }, [])
+  );
 
   // Update course schedules on mount, subscribe to active sessions
   useEffect(() => {
@@ -64,6 +73,19 @@ export default function StudentDashboard({ navigation, route }) {
       navigation.setParams({ newCourse: undefined });
     }
   }, [route.params?.newCourse]);
+
+  // Handle checkin refresh
+  useEffect(() => {
+    if (route.params?.newCheckIn) {
+      setCourses(courses.map((course) => {
+        if (course.$id == route.params?.newCheckIn.$id) {
+          return route.params?.newCheckIn;
+        } else {
+          return course;
+        }
+      }));
+    }
+  }, [route.params?.newCheckIn]);
 
   // Handle check-in completion
   useEffect(() => {
@@ -119,82 +141,89 @@ export default function StudentDashboard({ navigation, route }) {
       </View>
 
       {/* Courses List */}
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
-        {courses.map((course) => (
-          <View key={course.$id} style={styles.courseCard}>
-            {/* Course Header */}
-            <View style={styles.courseHeader}>
-              <View style={styles.courseInfo}>
-                <Text style={styles.courseCode}>{course.code}</Text>
-                <Text style={styles.courseName}>{course.name}</Text>
-              </View>
-              {course.hasActiveAttendance && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>Check-in Open</Text>
+      {isLoading ? (
+        <View style={{flexDirection: 'column', flex: 1, alignItems: 'center', justifyContent: 'center'}}>
+          <ActivityIndicator color='gray' size='large' />
+          <Text style={{color: 'gray', fontSize: 15, fontWeight: 600, marginTop: 14}}>Loading Courses</Text>
+        </View>
+      ) : (
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.coursesList}>
+          {courses.map((course) => (
+            <View key={course.$id} style={styles.courseCard}>
+              {/* Course Header */}
+              <View style={styles.courseHeader}>
+                <View style={styles.courseInfo}>
+                  <Text style={styles.courseCode}>{course.code}</Text>
+                  <Text style={styles.courseName}>{course.name}</Text>
                 </View>
-              )}
-            </View>
-
-            {/* Schedule Info */}
-            <View style={styles.scheduleSection}>
-              <View style={styles.scheduleRow}>
-                <MaterialIcons name="event" size={16} color="#777777" />
-                <Text style={styles.scheduleText}>{course.schedule}</Text>
+                {course.hasActiveAttendance && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>Check-in Open</Text>
+                  </View>
+                )}
               </View>
-            </View>
 
-            {/* Attendance Progress */}
-            {course.totalClasses > 0 ? (
-              <View style={styles.attendanceSection}>
-                <View style={styles.attendanceHeader}>
-                  <Text style={styles.attendanceLabel}>Course Attendance</Text>
-                  <Text style={[styles.attendanceRate, { color: getAttendanceColor(course.attendanceRate) }]}>
-                    {course.attendanceRate}% ({course.attended}/{course.totalClasses})
-                  </Text>
-                </View>
-                <View style={styles.progressBarContainer}>
-                  <View
-                    style={[
-                      styles.progressBar,
-                      {
-                        width: `${course.attendanceRate}%`,
-                        backgroundColor: getAttendanceColor(course.attendanceRate),
-                      },
-                    ]}
-                  />
+              {/* Schedule Info */}
+              <View style={styles.scheduleSection}>
+                <View style={styles.scheduleRow}>
+                  <MaterialIcons name="event" size={16} color="#777777" />
+                  <Text style={styles.scheduleText}>{course.schedule}</Text>
                 </View>
               </View>
-            ) : (
-              <Text style={styles.noDataText}>No attendance data yet</Text>
-            )}
 
-            {/* Action Buttons */}
-            <View style={styles.buttonRow}>
-              {course.hasActiveAttendance ? (
-                <TouchableOpacity 
-                  style={styles.checkInButton}
-                  onPress={() => navigation.navigate('CheckIn', { course })}
-                >
-                  <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
-                  <Text style={styles.checkInButtonText}>Check In Now</Text>
-                </TouchableOpacity>
+              {/* Attendance Progress */}
+              {course.totalClasses > 0 ? (
+                <View style={styles.attendanceSection}>
+                  <View style={styles.attendanceHeader}>
+                    <Text style={styles.attendanceLabel}>Course Attendance</Text>
+                    <Text style={[styles.attendanceRate, { color: getAttendanceColor(course.attendanceRate) }]}>
+                      {course.attendanceRate}% ({course.attended}/{course.totalClasses})
+                    </Text>
+                  </View>
+                  <View style={styles.progressBarContainer}>
+                    <View
+                      style={[
+                        styles.progressBar,
+                        {
+                          width: `${course.attendanceRate}%`,
+                          backgroundColor: getAttendanceColor(course.attendanceRate),
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
               ) : (
-                <View style={styles.disabledButton}>
-                  <Text style={styles.disabledButtonText}>Check-in Not Available</Text>
-                </View>
+                <Text style={styles.noDataText}>No attendance data yet</Text>
               )}
-              {course.totalClasses > 0 && (
-                <TouchableOpacity 
-                  style={styles.iconButton}
-                  onPress={() => navigation.navigate('StudentStats', { courses })}
-                >
-                  <Entypo name="bar-graph" size={18} color="#175EFC" />
-                </TouchableOpacity>
-              )}
+
+              {/* Action Buttons */}
+              <View style={styles.buttonRow}>
+                {course.hasActiveAttendance ? (
+                  <TouchableOpacity 
+                    style={styles.checkInButton}
+                    onPress={() => navigation.navigate('CheckIn', { course })}
+                  >
+                    <FontAwesome5 name="check-circle" size={16} color="#FFFFFF" />
+                    <Text style={styles.checkInButtonText}>Check In Now</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.disabledButton}>
+                    <Text style={styles.disabledButtonText}>Check-in Not Available</Text>
+                  </View>
+                )}
+                {course.totalClasses > 0 && (
+                  <TouchableOpacity 
+                    style={styles.iconButton}
+                    onPress={() => navigation.navigate('StudentStats', { courses })}
+                  >
+                    <Entypo name="bar-graph" size={18} color="#175EFC" />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-          </View>
-        ))}
-      </ScrollView>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -247,7 +276,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   coursesList: {
-    flex: 1,
     padding: 20,
     paddingTop: 16,
   },

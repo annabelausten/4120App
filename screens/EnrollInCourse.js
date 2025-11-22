@@ -224,9 +224,9 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    paddingBottom: 20
   },
   coursesList: {
-    flex: 1,
     padding: 20,
   },
   emptyState: {
